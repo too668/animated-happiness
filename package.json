@@ -2,5 +2,8 @@
   "name": "animated-happiness-edgeone-image-uploader",
   "version": "1.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@edgeone/pages-blob": "^0.0.16"
+  }
 }
