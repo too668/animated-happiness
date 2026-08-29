@@ -13,7 +13,28 @@ const ICONS = {
   info: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`
 };
 
-// Toast notification system
+// ── Theme Toggle ──
+function initTheme() {
+  const saved = localStorage.getItem('yoo-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = saved || (prefersDark ? 'dark' : 'light');
+  if (theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('yoo-theme', next);
+}
+
+document.querySelectorAll('#themeToggle').forEach(btn => {
+  btn.addEventListener('click', toggleTheme);
+});
+
+// ── Toast ──
 function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
@@ -30,6 +51,7 @@ function showToast(message, type = 'info') {
   }, 3000);
 }
 
+// ── Storage ──
 function getSavedList() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -45,7 +67,23 @@ function saveList(items) {
 }
 
 function updateCount(items) {
-  const el = document.getElementById('totalCount');</div>';
+  const el = document.getElementById('totalCount');
+  if (el) el.textContent = `${items.length} 张图片`;
+}
+
+// ── Render List ──
+function renderList(items) {
+  const listRoot = document.getElementById('imageList');
+  if (!listRoot) return;
+
+  const searchInput = document.getElementById('searchInput');
+  const query = searchInput?.value.toLowerCase() || '';
+  const filtered = query
+    ? items.filter(item => item.name.toLowerCase().includes(query))
+    : items;
+
+  if (!filtered.length) {
+    listRoot.innerHTML = '<div class="empty">暂无图片，上传一张试试吧</div>';
     return;
   }
 
@@ -59,21 +97,7 @@ function updateCount(items) {
           <button class="small-btn" data-action="view" data-key="${item.key}">${ICONS.view}</button>
           <button class="small-btn" data-action="copy" data-key="${item.key}">${ICONS.copy}</button>
           <button class="small-btn" data-action="rename" data-key="${item.key}">${ICONS.rename}</button>
-          <button class="small-btn danger" data-action="delete" data-key="${item.key}">${ICONS.delete}
-    return;
-  }
-
-  listRoot.innerHTML = filtered.map((item) => `
-    <div class="image-item" data-key="${item.key}">
-      <img src="${item.url}" alt="${item.name}" loading="lazy" />
-      <div class="image-meta">
-        <strong title="${item.name}">${item.name}</strong>
-        <div class="muted">${item.size || 'image'}${item.localOnly ? ' · 本地' : ''}</div>
-        <div class="row-inline">
-          <button class="small-btn" data-action="view" data-key="${item.key}">👁 查看</button>
-          <button class="small-btn" data-action="copy" data-key="${item.key}">📋 复制</button>
-          <button class="small-btn" data-action="rename" data-key="${item.key}">✏️ 重命名</button>
-          <button class="small-btn danger" data-action="delete" data-key="${item.key}">🗑 删除</button>
+          <button class="small-btn danger" data-action="delete" data-key="${item.key}">${ICONS.delete}</button>
         </div>
       </div>
     </div>
@@ -87,11 +111,11 @@ function updateCount(items) {
       if (!target) return;
 
       if (action === 'view') window.open(target.url, '_blank');
-      
+
       if (action === 'copy') {
         navigator.clipboard.writeText(target.url).then(() => showToast('URL 已复制到剪贴板', 'success'));
       }
-      
+
       if (action === 'rename') {
         const nextName = window.prompt('请输入新文件名', target.name);
         if (!nextName?.trim()) return;
@@ -99,14 +123,14 @@ function updateCount(items) {
         saveList(currentItems.map((item) => item.key === targetKey ? { ...item, name: nextName.trim() } : item));
         renderList(getSavedList());
       }
-      
+
       if (action === 'delete') {
         if (!window.confirm(`确定删除 ${target.name}？`)) return;
-        
+
         const btn = button;
         btn.disabled = true;
-        btn.textContent = '⏳ 删除中...';
-        
+        btn.textContent = '删除中...';
+
         try {
           const serverDeleted = await deleteImageFromServer(target.key);
           const currentItems = getSavedList();
@@ -128,6 +152,7 @@ function updateCount(items) {
   });
 }
 
+// ── API ──
 async function fetchFromApi(endpoint, options = {}) {
   const apiEndpoint = document.getElementById('apiEndpoint');
   const baseUrl = (apiEndpoint?.value.trim()) || 'https://yooy.cc.cd';
@@ -185,7 +210,7 @@ async function uploadFiles(files) {
   const endpoint = (apiEndpoint?.value.trim()) || 'https://yooy.cc.cd/api/upload';
 
   let successCount = 0;
-  
+
   for (const file of files) {
     try {
       const formData = new FormData();
@@ -216,7 +241,7 @@ async function uploadFiles(files) {
 
   saveList(currentItems);
   renderList(currentItems);
-  
+
   if (successCount > 0) {
     showToast(`成功上传 ${successCount} 张图片`, 'success');
     setTimeout(() => loadImagesFromServer(), 500);
@@ -236,12 +261,13 @@ function attachEvents() {
   if (refreshBtn) refreshBtn.addEventListener('click', async () => {
     const btn = refreshBtn;
     btn.disabled = true;
-    btn.textContent = '⏳ 加载中...';
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `<svg style="animation:spin 1s linear infinite;width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> 加载中...`;
     try {
       await loadImagesFromServer();
     } finally {
       btn.disabled = false;
-      btn.textContent = '🔄 刷新';
+      btn.innerHTML = originalHtml;
     }
   });
 
@@ -252,31 +278,38 @@ function attachEvents() {
   // Drop zone
   const dropZone = document.getElementById('dropZone');
   const uploadInput = document.getElementById('uploadInput');
-  
+
   if (dropZone && uploadInput) {
     dropZone.addEventListener('click', () => uploadInput.click());
-    
+
     dropZone.addEventListener('dragover', (e) => {
       e.preventDefault();
       dropZone.classList.add('drag-over');
     });
-    
+
     dropZone.addEventListener('dragleave', () => {
       dropZone.classList.remove('drag-over');
     });
-    
+
     dropZone.addEventListener('drop', (e) => {
       e.preventDefault();
       dropZone.classList.remove('drag-over');
       uploadFiles(e.dataTransfer.files);
     });
-    
+
     uploadInput.addEventListener('change', () => {
       if (uploadInput.files.length) uploadFiles(uploadInput.files);
     });
   }
 }
 
+// Add spin animation
+const style = document.createElement('style');
+style.textContent = `@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
+document.head.appendChild(style);
+
+// Init
+initTheme();
 document.addEventListener('DOMContentLoaded', async () => {
   const saved = await loadImagesFromServer();
   renderList(saved);
