@@ -3,52 +3,66 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>上传管理</title>
+    <title>YOY 图床 · 管理后台</title>
+    <meta name="description" content="YOY 图床图片上传与管理后台，支持拖拽上传、批量操作、URL 复制。" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand">
-          <span class="brand-mark">E</span>
-          <span>上传管理页</span>
+          <span class="brand-mark">Y</span>
+          <span>YOY 图床</span>
+          <span class="badge success">● 在线</span>
         </div>
         <nav class="nav">
           <a href="./index.html">主页</a>
           <a href="./api.html">API 文档</a>
-          <a href="./upload.html">上传页面</a>
+          <a href="./upload.html" class="active">管理后台</a>
         </nav>
       </div>
     </header>
 
     <main class="container">
-      <section class="section">
-        <h1>图片上传与管理</h1>
+      <section class="section" style="padding-top:16px;">
+        <h1 style="margin-bottom:24px;">图片管理</h1>
 
-        <div class="panel upload-panel">
-          <div class="row">
-            <input id="apiEndpoint" type="text" value="https://yooy.cc.cd/api/upload" placeholder="接口地址" />
-            <button id="refreshListBtn" class="secondary-btn" type="button">刷新列表</button>
+        <!-- Upload Area -->
+        <div class="card" style="margin-bottom:24px;">
+          <h3 style="margin-bottom:16px;">上传新图片</h3>
+          
+          <div class="upload-area" id="dropZone">
+            <div class="icon">📁</div>
+            <p><strong>拖拽图片到此处</strong> 或点击选择文件</p>
+            <p style="font-size:0.82rem;margin-top:6px;">支持 PNG、JPG、GIF、WebP，可批量上传</p>
           </div>
+          <input type="file" id="uploadInput" accept="image/*" multiple style="display:none;" />
 
-          <div class="row row-gap">
-            <input id="uploadInput" type="file" accept="image/*" multiple />
-            <button id="uploadBtn" type="button">上传图片</button>
-          </div>
-
-          <div class="row row-gap">
-            <input id="searchInput" type="text" placeholder="搜索图片名" />
+          <div class="row row-gap" style="margin-top:16px;">
+            <input id="apiEndpoint" type="text" value="https://yooy.cc.cd/api/upload" placeholder="API 接口地址" style="flex:1;" />
+            <button id="refreshListBtn" class="secondary-btn" type="button">🔄 刷新</button>
           </div>
         </div>
 
-        <div class="panel">
-          <h3>图片列表</h3>
+        <!-- Search -->
+        <div class="row" style="margin-bottom:16px;">
+          <input id="searchInput" type="text" placeholder="🔍 搜索图片名称..." style="flex:1;max-width:400px;" />
+          <span id="totalCount" class="badge" style="margin-left:auto;">0 张图片</span>
+        </div>
+
+        <!-- Image Grid -->
+        <div class="card">
+          <h3 style="margin-bottom:12px;">图片列表</h3>
           <div id="imageList" class="image-list"></div>
         </div>
       </section>
     </main>
 
-    <footer>图片上传与管理页面</footer>
+    <footer>YOY 图床 · 图片上传与管理</footer>
+    <div id="toastContainer" class="toast-container"></div>
 
     <script src="./script.js"></script>
   </body>

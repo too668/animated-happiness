@@ -3,93 +3,134 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>API 文档</title>
+    <title>YOY 图床 · API 文档</title>
+    <meta name="description" content="YOY 图床完整 API 文档，包含上传、列表、删除接口说明与示例。" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand">
-          <span class="brand-mark">E</span>
-          <span>EdgeOne 图床服务</span>
+          <span class="brand-mark">Y</span>
+          <span>YOY 图床</span>
+          <span class="badge success">● 在线</span>
         </div>
         <nav class="nav">
           <a href="./index.html">主页</a>
-          <a href="./api.html">API 文档</a>
-          <a href="./upload.html">上传页面</a>
+          <a href="./api.html" class="active">API 文档</a>
+          <a href="./upload.html">管理后台</a>
         </nav>
       </div>
     </header>
 
     <main class="container">
-      <section class="section">
+      <section class="section" style="padding-top:16px;">
         <h1>API 文档</h1>
+        <p class="lead">YOY 图床提供完整的图片托管 REST API，支持上传图片、查询列表、删除对象。</p>
 
-        <div class="panel">
-          <h3>1. 上传接口</h3>
-          <pre>POST /api/upload</pre>
-          <p>用于上传图片文件，返回图片访问 URL。</p>
-        </div>
+        <!-- Upload Endpoint -->
+        <div class="card" style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <code style="background:rgba(45,212,191,0.12);color:#5eead4;border-color:rgba(45,212,191,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">POST</code>
+            <code style="font-size:1rem;">/api/upload</code>
+            <span class="badge">核心接口</span>
+          </div>
 
-        <div class="panel">
-          <h3>2. 请求示例</h3>
-          <pre>curl -X POST "https://yooy.cc.cd/api/upload" \
+          <h3>接口说明</h3>
+          <p style="color:var(--muted);margin:0 0 16px;">上传图片到 EdgeOne Blob Storage，返回公开访问 URL。支持三种上传方式。</p>
+
+          <h3>上传方式一：multipart/form-data</h3>
+          <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
+  -F "file=@/path/to/image.png"</code></pre>
+
+          <h3>上传方式二：JSON + Base64</h3>
+          <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
   -H "Content-Type: application/json" \
-  --data '{
-    "filename":"demo.png",
-    "base64":"data:image/png;base64,..."
-  }'</pre>
-        </div>
+  -d '{
+    "filename": "demo.png",
+    "base64": "data:image/png;base64,iVBORw0KGgo..."
+  }'</code></pre>
 
-        <div class="panel">
-          <h3>3. 参数说明</h3>
-          <table class="table">
-            <thead>
-              <tr>
-                <th>字段</th>
-                <th>类型</th>
-                <th>说明</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>filename</td>
-                <td>string</td>
-                <td>可选，保存文件名</td>
-              </tr>
-              <tr>
-                <td>base64</td>
-                <td>string</td>
-                <td>Base64 图片内容</td>
-              </tr>
-              <tr>
-                <td>file</td>
-                <td>File</td>
-                <td>multipart/form-data 上传文件</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          <h3>上传方式三：纯二进制流</h3>
+          <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
+  -H "Content-Type: image/png" \
+  --data-binary @image.png</code></pre>
 
-        <div class="panel">
-          <h3>4. 成功返回</h3>
-          <pre>{
+          <h3 style="margin-top:20px;">响应体</h3>
+          <pre><code>{
   "ok": true,
   "message": "Image uploaded to EdgeOne Blob Storage",
   "key": "images/2026-08-29/1724900000000-demo.png",
-  "url": "https://.../images/2026-08-29/1724900000000-demo.png"
-}</pre>
+  "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-demo.png"
+}</code></pre>
         </div>
 
-        <div class="panel">
-          <h3>5. 扩展接口</h3>
-          <pre>GET /api/list
-DELETE /api/delete?key=images/xxx.png</pre>
-          <p>用于获取图片列表并删除对象，适合管理后台使用。</p>
+        <!-- List Endpoint -->
+        <div class="card" style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <code style="background:rgba(78,161,255,0.12);color:#93c5fd;border-color:rgba(78,161,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
+            <code style="font-size:1rem;">/api/list</code>
+            <span class="badge">列表接口</span>
+          </div>
+
+          <p style="color:var(--muted);margin:0 0 16px;">获取当前存储中所有图片对象列表。</p>
+
+          <pre><code>curl "https://yooy.cc.cd/api/list"</code></pre>
+
+          <h3 style="margin-top:16px;">响应体</h3>
+          <pre><code>{
+  "ok": true,
+  "items": [
+    {
+      "key": "images/2026-08-29/1724900000000-demo.png",
+      "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-demo.png",
+      "size": 102400,
+      "contentType": "image/png",
+      "uploadedAt": "2026-08-29T12:00:00.000Z"
+    }
+  ]
+}</code></pre>
+        </div>
+
+        <!-- Delete Endpoint -->
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <code style="background:rgba(251,113,133,0.12);color:#fda4af;border-color:rgba(251,113,133,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">DELETE</code>
+            <code style="font-size:1rem;">/api/delete</code>
+            <span class="badge danger">删除接口</span>
+          </div>
+
+          <p style="color:var(--muted);margin:0 0 16px;">根据 key 删除指定图片对象。key 格式：<code>images/YYYY-MM-DD/timestamp-filename.ext</code></p>
+
+          <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=images/2026-08-29/1724900000000-demo.png"</code></pre>
+
+          <h3 style="margin-top:16px;">响应体</h3>
+          <pre><code>{
+  "ok": true,
+  "message": "Image deleted successfully"
+}</code></pre>
+        </div>
+
+        <!-- Error Responses -->
+        <div class="card" style="margin-top:20px;">
+          <h3>错误响应</h3>
+          <pre><code>{
+  "ok": false,
+  "error": "Missing file field in multipart/form-data"
+}</code></pre>
+          <p style="color:var(--muted);margin-top:12px;">常见错误：</p>
+          <ul style="color:var(--muted);line-height:2;">
+            <li><code>Only POST is supported</code> — 方法不正确</li>
+            <li><code>Missing file field</code> — 未提供文件</li>
+            <li><code>Unsupported body format</code> — 请求体格式不合法</li>
+          </ul>
         </div>
       </section>
     </main>
 
-    <footer>EdgeOne 图床服务 · 图片上传与管理</footer>
+    <footer>YOY 图床 · API 文档 v1.0</footer>
   </body>
 </html>
