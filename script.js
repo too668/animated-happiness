@@ -66,7 +66,7 @@ function renderList(items) {
   `).join('');
 
   listRoot.querySelectorAll('button').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const action = button.dataset.action;
       const targetKey = button.dataset.key;
       const target = filtered.find((item) => item.key === targetKey);
@@ -88,13 +88,76 @@ function renderList(items) {
       
       if (action === 'delete') {
         if (!window.confirm(`确定删除 ${target.name}？`)) return;
-        const currentItems = getSavedList();
-        saveList(currentItems.filter((item) => item.key !== targetKey));
-        renderList(getSavedList());
-        showToast('图片已删除', 'success');
+        
+        const btn = button;
+        btn.disabled = true;
+        btn.textContent = '⏳ 删除中...';
+        
+        try {
+          const serverDeleted = await deleteImageFromServer(target.key);
+          const currentItems = getSavedList();
+          
+          if (serverDeleted) {
+            saveList(currentItems.filter((item) => item.key !== targetKey));
+          }
+          
+          renderList(getSavedList());
+          showToast('图片已删除', 'success');
+        } catch (error) {
+          showToast('删除失败，请重试', 'error');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '🗑 删除';
+        }
       }
     });
   });
+}
+
+async function fetchFromApi(endpoint, options = {}) {
+  const apiEndpoint = document.getElementById('apiEndpoint');
+  const baseUrl = (apiEndpoint?.value.trim()) || 'https://yooy.cc.cd';
+  const url = `${baseUrl}${endpoint}`;
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error('API 请求失败:', error);
+    throw error;
+  }
+}
+
+async function loadImagesFromServer() {
+  try {
+    const result = await fetchFromApi('/api/list');
+    if (result.ok && Array.isArray(result.items)) {
+      const items = result.items.map(item => ({
+        key: item.key,
+        name: item.key.split('/').pop() || 'image',
+        url: item.url,
+        size: item.size ? `${Math.ceil(item.size / 1024)} KB` : '未知',
+        contentType: item.contentType
+      }));
+      saveList(items);
+      renderList(items);
+      showToast(`已同步 ${items.length} 张图片`, 'success');
+      return items;
+    }
+  } catch (error) {
+    console.warn('从服务器加载失败，使用本地数据:', error);
+  }
+  return getSavedList();
+}
+
+async function deleteImageFromServer(key) {
+  try {
+    await fetchFromApi(`/api/delete?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+    return true;
+  } catch (error) {
+    console.error('删除失败:', error);
+    return false;
+  }
 }
 
 async function uploadFiles(files) {
@@ -127,7 +190,6 @@ async function uploadFiles(files) {
       });
       successCount++;
     } catch (error) {
-      // Fallback to local preview
       currentItems.unshift({
         key: `${Date.now()}-${file.name}`,
         name: file.name,
@@ -143,6 +205,7 @@ async function uploadFiles(files) {
   
   if (successCount > 0) {
     showToast(`成功上传 ${successCount} 张图片`, 'success');
+    setTimeout(() => loadImagesFromServer(), 500);
   }
 }
 
@@ -156,7 +219,17 @@ function attachEvents() {
 
   // Refresh button
   const refreshBtn = document.getElementById('refreshListBtn');
-  if (refreshBtn) refreshBtn.addEventListener('click', () => renderList(getSavedList()));
+  if (refreshBtn) refreshBtn.addEventListener('click', async () => {
+    const btn = refreshBtn;
+    btn.disabled = true;
+    btn.textContent = '⏳ 加载中...';
+    try {
+      await loadImagesFromServer();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔄 刷新';
+    }
+  });
 
   // Search
   const searchInput = document.getElementById('searchInput');
@@ -190,8 +263,8 @@ function attachEvents() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const saved = getSavedList();
+document.addEventListener('DOMContentLoaded', async () => {
+  const saved = await loadImagesFromServer();
   renderList(saved);
   attachEvents();
 });
