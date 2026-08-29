@@ -34,6 +34,13 @@ document.querySelectorAll('#themeToggle').forEach(btn => {
   btn.addEventListener('click', toggleTheme);
 });
 
+// Re-initialize icons when theme changes or navigation happens
+function refreshIcons() {
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+}
+
 // ── Toast ──
 function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
@@ -83,7 +90,8 @@ function renderList(items) {
     : items;
 
   if (!filtered.length) {
-    listRoot.innerHTML = '<div class="empty">暂无图片，上传一张试试吧</div>';
+    listRoot.innerHTML = '<div class="empty"><i data-lucide="inbox" class="icon-lg" style="margin-bottom:8px;display:block;"></i>暂无图片，上传一张试试吧</div>';
+    refreshIcons();
     return;
   }
 
@@ -94,14 +102,24 @@ function renderList(items) {
         <strong title="${item.name}">${item.name}</strong>
         <div class="muted">${item.size || 'image'}${item.localOnly ? ' · 本地' : ''}</div>
         <div class="row-inline">
-          <button class="small-btn" data-action="view" data-key="${item.key}">${ICONS.view}</button>
-          <button class="small-btn" data-action="copy" data-key="${item.key}">${ICONS.copy}</button>
-          <button class="small-btn" data-action="rename" data-key="${item.key}">${ICONS.rename}</button>
-          <button class="small-btn danger" data-action="delete" data-key="${item.key}">${ICONS.delete}</button>
+          <button class="small-btn" data-action="view" data-key="${item.key}" title="查看">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button class="small-btn" data-action="copy" data-key="${item.key}" title="复制 URL">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+          <button class="small-btn" data-action="rename" data-key="${item.key}" title="重命名">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="small-btn danger" data-action="delete" data-key="${item.key}" title="删除">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
         </div>
       </div>
     </div>
   `).join('');
+
+  refreshIcons();
 
   listRoot.querySelectorAll('button').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -129,7 +147,7 @@ function renderList(items) {
 
         const btn = button;
         btn.disabled = true;
-        btn.textContent = '删除中...';
+        btn.innerHTML = '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
 
         try {
           const serverDeleted = await deleteImageFromServer(target.key);
@@ -145,7 +163,7 @@ function renderList(items) {
           showToast('删除失败，请重试', 'error');
         } finally {
           btn.disabled = false;
-          btn.innerHTML = ICONS.delete;
+          btn.innerHTML = '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
         }
       }
     });
@@ -262,12 +280,13 @@ function attachEvents() {
     const btn = refreshBtn;
     btn.disabled = true;
     const originalHtml = btn.innerHTML;
-    btn.innerHTML = `<svg style="animation:spin 1s linear infinite;width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> 加载中...`;
+    btn.innerHTML = `<svg style="animation:spin 1s linear infinite;width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg><span style="margin-left:6px;">加载中...</span>`;
     try {
       await loadImagesFromServer();
     } finally {
       btn.disabled = false;
-      btn.innerHTML = originalHtml;
+      btn.innerHTML = '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span style="margin-left:6px;">刷新</span>';
+      refreshIcons();
     }
   });
 
@@ -311,6 +330,9 @@ document.head.appendChild(style);
 // Init
 initTheme();
 document.addEventListener('DOMContentLoaded', async () => {
+  // Initialize Lucide icons
+  refreshIcons();
+  
   const saved = await loadImagesFromServer();
   renderList(saved);
   attachEvents();

@@ -9,22 +9,45 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
   </head>
   <body>
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand">
-          <span class="brand-mark">Y</span>
-          <span>YOO</span>
-          <span class="badge success">● 在线</span>
+          <svg class="brand-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="40" height="40" rx="10" fill="url(#brand-gradient)"/>
+            <path d="M12 28V12L20 20L28 12V28" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="brand-gradient" x1="0" y1="0" x2="40" y2="40">
+                <stop stop-color="#409EFF"/>
+                <stop offset="1" stop-color="#00C6FB"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="brand-text">YOO</span>
+          <span class="badge success">
+            <i data-lucide="check-circle" class="icon-xs"></i>
+            <span>在线</span>
+          </span>
         </div>
         <nav class="nav">
-          <a href="./index.html">主页</a>
-          <a href="./api.html">API 文档</a>
-          <a href="./upload.html" class="active">管理后台</a>
+          <a href="./index.html">
+            <i data-lucide="home" class="icon-sm"></i>
+            <span>主页</span>
+          </a>
+          <a href="./api.html">
+            <i data-lucide="book-open" class="icon-sm"></i>
+            <span>API 文档</span>
+          </a>
+          <a href="./upload.html" class="active">
+            <i data-lucide="settings" class="icon-sm"></i>
+            <span>管理后台</span>
+          </a>
           <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
-            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <i data-lucide="moon" class="icon-moon icon-md"></i>
+            <i data-lucide="sun" class="icon-sun icon-md"></i>
           </button>
         </nav>
       </div>
@@ -36,38 +59,84 @@
 
         <!-- Upload Area -->
         <div class="card" style="margin-bottom:24px;">
-          <h3 style="margin-bottom:16px;">上传新图片</h3>
+          <h3 style="margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+            <i data-lucide="upload-cloud" class="icon-md"></i>
+            <span>上传新图片</span>
+          </h3>
           
           <div class="upload-area" id="dropZone">
-            <div class="icon">📁</div>
+            <i data-lucide="image-plus" class="icon-upload" style="width:48px;height:48px;color:var(--brand);margin-bottom:12px;"></i>
             <p><strong>拖拽图片到此处</strong> 或点击选择文件</p>
-            <p style="font-size:0.82rem;margin-top:6px;">支持 PNG、JPG、GIF、WebP，可批量上传</p>
+            <p style="font-size:0.82rem;margin-top:6px;">支持 PNG、JPG、GIF、WebP、SVG，可批量上传</p>
+            <p style="font-size:0.75rem;margin-top:4px;color:var(--muted);">最大文件大小：10MB</p>
           </div>
           <input type="file" id="uploadInput" accept="image/*" multiple style="display:none;" />
 
           <div class="row row-gap" style="margin-top:16px;">
             <input id="apiEndpoint" type="text" value="https://yooy.cc.cd/api/upload" placeholder="API 接口地址" style="flex:1;" />
-            <button id="refreshListBtn" class="secondary-btn" type="button">🔄 刷新</button>
+            <button id="refreshListBtn" class="secondary-btn" type="button">
+              <i data-lucide="refresh-cw" class="icon-sm"></i>
+              <span>刷新</span>
+            </button>
           </div>
         </div>
 
         <!-- Search -->
         <div class="row" style="margin-bottom:16px;">
-          <input id="searchInput" type="text" placeholder="🔍 搜索图片名称..." style="flex:1;max-width:400px;" />
-          <span id="totalCount" class="badge" style="margin-left:auto;">0 张图片</span>
+          <div style="position:relative;flex:1;max-width:400px;">
+            <i data-lucide="search" class="icon-sm" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);"></i>
+            <input id="searchInput" type="text" placeholder="搜索图片名称..." style="padding-left:36px;width:100%;" />
+          </div>
+          <span id="totalCount" class="badge" style="margin-left:auto;">
+            <i data-lucide="image" class="icon-xs"></i>
+            <span>0 张图片</span>
+          </span>
         </div>
 
         <!-- Image Grid -->
         <div class="card">
-          <h3 style="margin-bottom:12px;">图片列表</h3>
+          <h3 style="margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+            <i data-lucide="grid-3x3" class="icon-md"></i>
+            <span>图片列表</span>
+          </h3>
           <div id="imageList" class="image-list"></div>
         </div>
       </section>
     </main>
 
-    <footer>YOO · 图片上传与管理</footer>
+    <footer>
+      <div class="footer-content">
+        <div class="footer-brand">
+          <svg class="brand-logo-small" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="32" height="32" rx="8" fill="url(#brand-gradient-small)"/>
+            <path d="M10 22V14L16 18L22 14V22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="brand-gradient-small" x1="0" y1="0" x2="32" y2="32">
+                <stop stop-color="#409EFF"/>
+                <stop offset="1" stop-color="#00C6FB"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div>
+            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">YOO · 图片上传与管理</div>
+            <div style="font-size:0.75rem;color:var(--muted);">安全 · 快速 · 可靠</div>
+          </div>
+        </div>
+        <div class="footer-links">
+          <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
+          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
+          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+        </div>
+      </div>
+    </footer>
     <div id="toastContainer" class="toast-container"></div>
 
     <script src="./script.js"></script>
+    <script>
+      // Initialize Lucide icons after DOM load
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+    </script>
   </body>
 </html>
