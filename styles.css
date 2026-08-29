@@ -23,6 +23,27 @@
   --radius-lg: 12px;
 }
 
+/* ── dark theme ── */
+[data-theme="dark"] {
+  --bg: #0f1117;
+  --bg-2: #1a1b26;
+  --panel: #1e1f2e;
+  --panel-2: #1a1b26;
+  --card: #1e1f2e;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-hover: rgba(64, 158, 255, 0.35);
+  --text: #cdd6f4;
+  --muted: #6c7086;
+  --brand: #58a6ff;
+  --brand-light: rgba(88, 166, 255, 0.1);
+  --brand-border: rgba(88, 166, 255, 0.2);
+  --success-light: rgba(166, 227, 161, 0.08);
+  --danger-light: rgba(248, 113, 113, 0.08);
+  --warning-light: rgba(246, 209, 91, 0.08);
+  --shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
 @font-face {
   font-family: 'MaoKenZhuYuanTi';
   src: url('https://www.dnsneko.com/fonts/MaoKenZhuYuanTi-MaokenZhuyuanTi-2.ttf') format('truetype');
@@ -53,6 +74,10 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+[data-theme="dark"] .topbar {
+  background: rgba(15, 17, 23, 0.92);
 }
 
 a { color: var(--brand); text-decoration: none; transition: opacity 0.15s; }
@@ -132,6 +157,32 @@ a:hover { opacity: 0.8; }
   background: var(--bg-2);
 }
 
+
+/* ── theme toggle ── */
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--bg-2);
+  border-color: var(--line-hover);
+}
+.theme-toggle svg { width: 18px; height: 18px; }
+.theme-toggle .icon-sun { display: none; }
+.theme-toggle .icon-moon { display: block; }
+[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
 .nav a.active {
   color: var(--brand);
   background: var(--brand-light);
