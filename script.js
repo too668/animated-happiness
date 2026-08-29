@@ -1,16 +1,30 @@
 const STORAGE_KEY = 'yoo-image-manager-items';
 
+// SVG Icon 定义
+const ICONS = {
+  upload: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
+  refresh: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
+  view: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  copy: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+  rename: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  delete: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
+  success: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+  error: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+  info: `<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`
+};
+
 // Toast notification system
 function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.textContent = message;
+  const iconMap = { success: ICONS.success, error: ICONS.error, info: ICONS.info };
+  toast.innerHTML = `${iconMap[type] || ICONS.info}<span>${message}</span>`;
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = '0';
-    toast.style.transform = 'translateX(20px)';
+    toast.style.transform = 'translateX(10px)';
     toast.style.transition = 'all 0.3s ease';
     setTimeout(() => toast.remove(), 300);
   }, 3000);
@@ -31,21 +45,21 @@ function saveList(items) {
 }
 
 function updateCount(items) {
-  const el = document.getElementById('totalCount');
-  if (el) el.textContent = `${items.length} 张图片`;
-}
+  const el = document.getElementById('totalCount');</div>';
+    return;
+  }
 
-function renderList(items) {
-  const listRoot = document.getElementById('imageList');
-  if (!listRoot) return;
-
-  const query = (document.getElementById('searchInput') || {}).value.toLowerCase() || '';
-  const filtered = items.filter((item) => item.name.toLowerCase().includes(query));
-
-  updateCount(filtered);
-
-  if (!filtered.length) {
-    listRoot.innerHTML = '<div class="empty">暂无图片，上传一张试试吧 🎉</div>';
+  listRoot.innerHTML = filtered.map((item) => `
+    <div class="image-item" data-key="${item.key}">
+      <img src="${item.url}" alt="${item.name}" loading="lazy" />
+      <div class="image-meta">
+        <strong title="${item.name}">${item.name}</strong>
+        <div class="muted">${item.size || 'image'}${item.localOnly ? ' · 本地' : ''}</div>
+        <div class="row-inline">
+          <button class="small-btn" data-action="view" data-key="${item.key}">${ICONS.view}</button>
+          <button class="small-btn" data-action="copy" data-key="${item.key}">${ICONS.copy}</button>
+          <button class="small-btn" data-action="rename" data-key="${item.key}">${ICONS.rename}</button>
+          <button class="small-btn danger" data-action="delete" data-key="${item.key}">${ICONS.delete}
     return;
   }
 
@@ -96,18 +110,18 @@ function renderList(items) {
         try {
           const serverDeleted = await deleteImageFromServer(target.key);
           const currentItems = getSavedList();
-          
+
           if (serverDeleted) {
             saveList(currentItems.filter((item) => item.key !== targetKey));
           }
-          
+
           renderList(getSavedList());
           showToast('图片已删除', 'success');
         } catch (error) {
           showToast('删除失败，请重试', 'error');
         } finally {
           btn.disabled = false;
-          btn.textContent = '🗑 删除';
+          btn.innerHTML = ICONS.delete;
         }
       }
     });
