@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EdgeOne 图床 API 文档</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-mark">E</span>
+          <span>EdgeOne 图床 API</span>
+        </div>
+        <nav class="nav">
+          <a href="#overview">概览</a>
+          <a href="#api">文档</a>
+          <a href="#examples">示例</a>
+          <a href="./upload.html">上传页</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="overview" class="section">
+        <h1>图床 API 文档</h1>
+        <p class="lead">
+          这是一个基于 EdgeOne Makers + Blob Storage 的图片上传与管理接口，适合对外提供图床服务，支持上传图片、返回 URL、查询列表、删除对象等操作。
+        </p>
+
+        <div class="two-col">
+          <div class="panel">
+            <h3>功能概览</h3>
+            <ul>
+              <li>上传图片并返回公开访问地址</li>
+              <li>支持 Base64 和 multipart/form-data</li>
+              <li>支持列表查看和删除对象</li>
+              <li>适合前端页面、AI 调用和小型图床服务</li>
+            </ul>
+          </div>
+
+          <div class="panel">
+            <h3>基础地址</h3>
+            <pre>https://yooy.cc.cd</pre>
+            <p class="meta">当前站点域名已配置为 yooy.cc.cd。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="api" class="section">
+        <h2>接口说明</h2>
+
+        <div class="panel">
+          <h3>1. 上传图片</h3>
+          <pre>POST /api/upload</pre>
+          <p>上传图片并返回图片 URL 地址。</p>
+        </div>
+
+        <div class="panel">
+          <h3>2. 获取图片列表</h3>
+          <pre>GET /api/list</pre>
+          <p>返回当前存储中的图片列表，包含 key、URL、文件名等信息。</p>
+        </div>
+
+        <div class="panel">
+          <h3>3. 删除图片</h3>
+          <pre>DELETE /api/delete?key=images/2026-08-29/demo.png</pre>
+          <p>根据 key 删除指定图片对象。</p>
+        </div>
+
+        <div class="panel">
+          <h3>4. 请求参数</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>字段</th>
+                <th>类型</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>filename</td>
+                <td>string</td>
+                <td>可选，上传时指定文件名</td>
+              </tr>
+              <tr>
+                <td>base64</td>
+                <td>string</td>
+                <td>图片的 Base64 字符串</td>
+              </tr>
+              <tr>
+                <td>file</td>
+                <td>File</td>
+                <td>multipart 表单文件字段</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h3>5. 成功响应</h3>
+          <pre>{
+  "ok": true,
+  "message": "Image uploaded to EdgeOne Blob Storage",
+  "key": "images/2026-08-29/1724900000000-demo.png",
+  "url": "https://example.com/images/2026-08-29/1724900000000-demo.png"
+}</pre>
+        </div>
+
+        <div class="panel">
+          <h3>6. 错误响应</h3>
+          <pre>{
+  "ok": false,
+  "error": "Missing file field in multipart/form-data"
+}</pre>
+        </div>
+      </section>
+
+      <section id="examples" class="section">
+        <h2>示例代码</h2>
+
+        <div class="panel">
+          <h3>cURL 示例</h3>
+          <pre>curl -X POST "https://yooy.cc.cd/api/upload" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "filename":"demo.png",
+    "base64":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB..."
+  }'</pre>
+        </div>
+
+        <div class="panel">
+          <h3>JavaScript 示例</h3>
+          <pre>const file = document.querySelector('#image').files[0];
+const form = new FormData();
+form.append('file', file);
+
+const res = await fetch('https://yooy.cc.cd/api/upload', {
+  method: 'POST',
+  body: form
+});
+
+const result = await res.json();
+console.log(result.url);</pre>
+        </div>
+
+        <div class="panel">
+          <h3>AI / 工具调用建议</h3>
+          <pre>POST https://yooy.cc.cd/api/upload
+Content-Type: multipart/form-data
+
+file=@image.png</pre>
+          <p>该接口最适合给 AI、脚本、自动化工具调用，用来在不依赖本地文件系统的情况下直接上传图片并获取 URL。</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>EdgeOne 图床 API 文档 · 适用于图片上传、管理与分发</footer>
+  </body>
+</html>

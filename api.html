@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>API 文档</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-mark">E</span>
+          <span>EdgeOne 图床服务</span>
+        </div>
+        <nav class="nav">
+          <a href="./index.html">主页</a>
+          <a href="./api.html">API 文档</a>
+          <a href="./upload.html">上传页面</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="section">
+        <h1>API 文档</h1>
+
+        <div class="panel">
+          <h3>1. 上传接口</h3>
+          <pre>POST /api/upload</pre>
+          <p>用于上传图片文件，返回图片访问 URL。</p>
+        </div>
+
+        <div class="panel">
+          <h3>2. 请求示例</h3>
+          <pre>curl -X POST "https://yooy.cc.cd/api/upload" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "filename":"demo.png",
+    "base64":"data:image/png;base64,..."
+  }'</pre>
+        </div>
+
+        <div class="panel">
+          <h3>3. 参数说明</h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>字段</th>
+                <th>类型</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>filename</td>
+                <td>string</td>
+                <td>可选，保存文件名</td>
+              </tr>
+              <tr>
+                <td>base64</td>
+                <td>string</td>
+                <td>Base64 图片内容</td>
+              </tr>
+              <tr>
+                <td>file</td>
+                <td>File</td>
+                <td>multipart/form-data 上传文件</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h3>4. 成功返回</h3>
+          <pre>{
+  "ok": true,
+  "message": "Image uploaded to EdgeOne Blob Storage",
+  "key": "images/2026-08-29/1724900000000-demo.png",
+  "url": "https://.../images/2026-08-29/1724900000000-demo.png"
+}</pre>
+        </div>
+
+        <div class="panel">
+          <h3>5. 扩展接口</h3>
+          <pre>GET /api/list
+DELETE /api/delete?key=images/xxx.png</pre>
+          <p>用于获取图片列表并删除对象，适合管理后台使用。</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>EdgeOne 图床服务 · 图片上传与管理</footer>
+  </body>
+</html>
