@@ -7,18 +7,51 @@ export default async function onRequest(context) {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization'
       }
     });
 
   try {
+    // Handle CORS preflight
     if (context.request.method === 'OPTIONS') {
       return json({ ok: true, message: 'CORS preflight OK' });
     }
 
-    if (context.request.method !== 'POST') {
-      return json({ ok: false, error: 'Only POST is supported' }, 405);
+    const url = new URL(context.request.url);
+    const path = url.pathname;
+
+    // GET /api/list - List all images
+    if (context.request.method === 'GET' && path === '/api/list') {
+      const store = getStore();
+      const { blobs } = await store.list({ prefix: 'images/' });
+      
+      const items = blobs.map(blob => ({
+        key: blob.key,
+        url: `https://yooy.cc.cd/${blob.key}`,
+        size: blob.size,
+        contentType: blob.contentType || 'application/octet-stream',
+        uploadedAt: blob.uploadedAt || new Date().toISOString()
+      }));
+
+      return json({ ok: true, items });
+    }
+
+    // DELETE /api/delete?key=...
+    if (context.request.method === 'DELETE' && path === '/api/delete') {
+      const key = url.searchParams.get('key');
+      if (!key) {
+        return json({ ok: false, error: 'Missing key parameter' }, 400);
+      }
+
+      const store = getStore();
+      await store.delete(key);
+      return json({ ok: true, message: 'Image deleted successfully' });
+    }
+
+    // POST /api/upload - Upload image
+    if (context.request.method !== 'POST' || path !== '/api/upload') {
+      return json({ ok: false, error: 'Not found' }, 404);
     }
 
     const request = context.request;
@@ -52,12 +85,13 @@ export default async function onRequest(context) {
       if (/^[A-Za-z0-9+/=\s]+$/.test(trimmed) && trimmed.length > 0) {
         fileBuffer = Buffer.from(trimmed.replace(/\s+/g, ''), 'base64');
       } else {
-        return json({ ok: false, error: 'Unsupported body format. Use multipart/form-data or JSON { base64 }.' }, 400);
+        return json({ ok: false, error: 'Unsupported body format' }, 400);
       }
     }
 
     const safeName = String(filename || 'upload.png').replace(/[^a-zA-Z0-9._-]/g, '-');
-    const key = `images/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${safeName}`;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const key = `images/${dateStr}/${Date.now()}-${safeName}`;
     const store = getStore();
 
     const uploadUrl = await store.createUploadUrl(key, {
@@ -67,9 +101,7 @@ export default async function onRequest(context) {
 
     const uploadRes = await fetch(uploadUrl, {
       method: 'PUT',
-      headers: {
-        'Content-Type': mimeType
-      },
+      headers: { 'Content-Type': mimeType },
       body: fileBuffer
     });
 
@@ -81,10 +113,9 @@ export default async function onRequest(context) {
       ok: true,
       message: 'Image uploaded to EdgeOne Blob Storage',
       key,
-      uploadUrl,
-      url: uploadUrl.split('?')[0]
+      url: `https://yooy.cc.cd/${key}`
     }, 200);
   } catch (error) {
-    return json({ ok: false, error: error.message || 'Unknown upload error' }, 400);
+    return json({ ok: false, error: error.message || 'Unknown error' }, 400);
   }
 }
