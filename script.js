@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'yoy-image-manager-items';
+const STORAGE_KEY = 'yoo-image-manager-items';
 
 // Toast notification system
 function showToast(message, type = 'info') {
