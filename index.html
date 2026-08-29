@@ -9,23 +9,49 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
   </head>
   <body>
     <header class="topbar">
       <div class="topbar-inner">
         <div class="brand">
-          <span class="brand-mark">Y</span>
-          <span>YOO</span>
-          <span class="badge success">● 在线</span>
+          <svg class="brand-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="40" height="40" rx="10" fill="url(#brand-gradient)"/>
+            <path d="M12 28V12L20 20L28 12V28" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="brand-gradient" x1="0" y1="0" x2="40" y2="40">
+                <stop stop-color="#409EFF"/>
+                <stop offset="1" stop-color="#00C6FB"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="brand-text">YOO</span>
+          <span class="badge success">
+            <i data-lucide="check-circle" class="icon-xs"></i>
+            <span>在线</span>
+          </span>
         </div>
         <nav class="nav">
-          <a href="#overview" class="active">概览</a>
-          <a href="#api">接口文档</a>
-          <a href="#examples">代码示例</a>
-          <a href="./upload.html">管理后台</a>
+          <a href="#overview" class="active">
+            <i data-lucide="layout-dashboard" class="icon-sm"></i>
+            <span>概览</span>
+          </a>
+          <a href="#api">
+            <i data-lucide="book-open" class="icon-sm"></i>
+            <span>接口文档</span>
+          </a>
+          <a href="#examples">
+            <i data-lucide="code" class="icon-sm"></i>
+            <span>代码示例</span>
+          </a>
+          <a href="./upload.html">
+            <i data-lucide="settings" class="icon-sm"></i>
+            <span>管理后台</span>
+          </a>
           <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
-            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <i data-lucide="moon" class="icon-moon icon-md"></i>
+            <i data-lucide="sun" class="icon-sun icon-md"></i>
           </button>
         </nav>
       </div>
@@ -193,8 +219,36 @@ file=@image.png</code></pre>
     </main>
 
     <footer>
-      <div style="margin-bottom:8px;">YOO · 基于 EdgeOne Makers</div>
-      <div style="font-size:0.8rem;opacity:0.6;">图片托管 · 边缘加速 · 简单易用</div>
+      <div class="footer-content">
+        <div class="footer-brand">
+          <svg class="brand-logo-small" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="32" height="32" rx="8" fill="url(#brand-gradient-small)"/>
+            <path d="M10 22V14L16 18L22 14V22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="brand-gradient-small" x1="0" y1="0" x2="32" y2="32">
+                <stop stop-color="#409EFF"/>
+                <stop offset="1" stop-color="#00C6FB"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div>
+            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">YOO · 基于 EdgeOne Makers</div>
+            <div style="font-size:0.75rem;color:var(--muted);">图片托管 · 边缘加速 · 简单易用</div>
+          </div>
+        </div>
+        <div class="footer-links">
+          <a href="#overview"><i data-lucide="layout-dashboard" class="icon-xs"></i> 概览</a>
+          <a href="#api"><i data-lucide="book-open" class="icon-xs"></i> API</a>
+          <a href="#examples"><i data-lucide="code" class="icon-xs"></i> 示例</a>
+          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+        </div>
+      </div>
     </footer>
+    <script>
+      // Initialize Lucide icons after DOM load
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+    </script>
   </body>
 </html>
