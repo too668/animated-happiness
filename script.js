@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'yoo-image-manager-items';
 
-// SVG Icon 定义
+// SVG Icon 定义 (使用 Lucide Icons)
 const ICONS = {
   upload: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
   refresh: `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
@@ -20,18 +20,27 @@ function initTheme() {
   const theme = saved || (prefersDark ? 'dark' : 'light');
   if (theme === 'dark') {
     document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
   }
 }
 
 function toggleTheme() {
   const current = document.documentElement.getAttribute('data-theme');
   const next = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
+  if (next === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
   localStorage.setItem('yoo-theme', next);
 }
 
-document.querySelectorAll('#themeToggle').forEach(btn => {
-  btn.addEventListener('click', toggleTheme);
+// Initialize theme toggle buttons on all pages
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#themeToggle').forEach(btn => {
+    btn.addEventListener('click', toggleTheme);
+  });
 });
 
 // Re-initialize icons when theme changes or navigation happens
@@ -146,24 +155,34 @@ function renderList(items) {
         if (!window.confirm(`确定删除 ${target.name}？`)) return;
 
         const btn = button;
+        const originalHtml = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
 
         try {
-          const serverDeleted = await deleteImageFromServer(target.key);
+          // Only attempt server deletion if the item is not local-only
+          let serverDeleted = false;
+          if (!target.localOnly) {
+            serverDeleted = await deleteImageFromServer(target.key);
+          } else {
+            serverDeleted = true; // Local items are always "deleted"
+          }
+          
           const currentItems = getSavedList();
 
           if (serverDeleted) {
             saveList(currentItems.filter((item) => item.key !== targetKey));
+            renderList(getSavedList());
+            showToast('图片已删除', 'success');
+          } else {
+            showToast('删除失败：服务器端未找到该文件', 'error');
           }
-
-          renderList(getSavedList());
-          showToast('图片已删除', 'success');
         } catch (error) {
+          console.error('Delete error:', error);
           showToast('删除失败，请重试', 'error');
         } finally {
           btn.disabled = false;
-          btn.innerHTML = '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+          btn.innerHTML = originalHtml;
         }
       }
     });
@@ -209,8 +228,12 @@ async function loadImagesFromServer() {
 
 async function deleteImageFromServer(key) {
   try {
-    await fetchFromApi(`/api/delete?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
-    return true;
+    const response = await fetchFromApi(`/api/delete?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+    // Check if the response indicates success
+    if (response && response.ok === true) {
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error('删除失败:', error);
     return false;

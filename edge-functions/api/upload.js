@@ -1,30 +1,32 @@
 import { getStore } from '@edgeone/pages-blob';
 
 /**
- * EdgeOne Pages Function - Image Upload API (Optimized Version)
+ * EdgeOne Pages Function - Image Upload API (Rebuilt & Hardened)
  * 
  * Features:
- *   - Multiple upload methods (multipart/form-data, base64, raw binary)
- *   - Image list with pagination
- *   - Delete by key
- *   - CORS support
- *   - Input validation and sanitization
- *   - Error handling
+ *   - URL 子链生成：保留原始文件扩展名
+ *   - 多种上传方式 (multipart/form-data, base64, raw binary)
+ *   - 图片列表分页 (?limit=&cursor=)
+ *   - 安全删除验证
+ *   - CORS 支持
+ *   - 严格的输入验证和错误处理
+ *   - 文件大小和类型限制
  * 
  * Endpoints:
- *   POST /api/upload   - Upload image
- *   GET  /api/list     - List all images (supports ?limit=&cursor=)
- *   DELETE /api/delete - Delete image by key
- *   OPTIONS            - CORS preflight
+ *   POST   /api/upload   - Upload image
+ *   GET    /api/list     - List all images (supports ?limit=&cursor=)
+ *   DELETE /api/delete   - Delete image by key
+ *   OPTIONS              - CORS preflight
  * 
  * Deployment: edge-functions/api/upload.js
  * Domain: https://yooy.cc.cd
  */
 
-// Configuration
+// Configuration Center
 const CONFIG = {
   MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
   ALLOWED_TYPES: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
+  ALLOWED_EXTENSIONS: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'],
   DEFAULT_LIMIT: 50,
   MAX_LIMIT: 100,
   CACHE_CONTROL: 'public, max-age=31536000',
@@ -43,26 +45,58 @@ const CORS_HEADERS = {
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: CORS_HEADERS });
 
-// Helper: Validate image type
+// Helper: Validate image MIME type
 function isValidImageType(mimeType) {
   if (!mimeType) return false;
   return CONFIG.ALLOWED_TYPES.includes(mimeType.toLowerCase());
+}
+
+// Helper: Validate file extension
+function isValidExtension(filename) {
+  const ext = '.' + filename.split('.').pop().toLowerCase();
+  return CONFIG.ALLOWED_EXTENSIONS.includes(ext);
 }
 
 // Helper: Sanitize filename
 function sanitizeFilename(filename) {
   return String(filename || 'upload')
     .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/-+/g, '-')
     .slice(0, 100);
 }
 
-// Helper: Generate unique key
-function generateKey(filename) {
-  const safeName = sanitizeFilename(filename);
+// Helper: Extract extension from filename or MIME type
+function getFileExtension(filename, mimeType) {
+  // Try to get from filename first
+  if (filename && filename.includes('.')) {
+    const ext = '.' + filename.split('.').pop().toLowerCase();
+    if (isValidExtension(ext)) {
+      return ext;
+    }
+  }
+  
+  // Fallback to MIME type mapping
+  const mimeToExt = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/svg+xml': '.svg'
+  };
+  
+  return mimeToExt[mimeType?.toLowerCase()] || '.png';
+}
+
+// Helper: Generate unique key with original extension (URL 子链生成)
+function generateKey(filename, mimeType) {
+  const ext = getFileExtension(filename, mimeType);
+  const safeName = sanitizeFilename(filename.replace(/\.[^.]+$/, ''));
   const dateStr = new Date().toISOString().slice(0, 10);
   const timestamp = Date.now();
   const random = Math.random().toString(36).slice(2, 8);
-  return `images/${dateStr}/${timestamp}-${random}-${safeName}`;
+  
+  // URL 子链生成：保留原始扩展名
+  return `images/${dateStr}/${timestamp}-${random}-${safeName}${ext}`;
 }
 
 export default async function onRequest(context) {
@@ -109,13 +143,27 @@ export default async function onRequest(context) {
     // ─── DELETE /api/delete?key=... ──────────────────────────────────
     if (context.request.method === 'DELETE' && path === '/api/delete') {
       const key = url.searchParams.get('key');
-      if (!key || !key.startsWith('images/')) {
-        return json({ ok: false, error: 'Invalid or missing key parameter' }, 400);
+      
+      // Strict validation: key must exist and start with 'images/'
+      if (!key) {
+        return json({ ok: false, error: 'Missing required parameter: key' }, 400);
+      }
+      
+      if (!key.startsWith('images/')) {
+        return json({ ok: false, error: 'Invalid key format: must start with "images/"' }, 400);
       }
 
       const store = getStore();
+      
+      // Verify the file exists before deletion
+      try {
+        await store.head(key);
+      } catch (headError) {
+        return json({ ok: false, error: 'File not found' }, 404);
+      }
+      
       await store.delete(key);
-      return json({ ok: true, message: 'Deleted successfully' });
+      return json({ ok: true, message: 'Deleted successfully', key });
     }
 
     // ─── POST /api/upload ────────────────────────────────────────────
@@ -184,12 +232,12 @@ export default async function onRequest(context) {
       const clean = source.replace(/^data:image\/[a-zA-Z0-9+-.]+;base64,/, '').trim();
       
       // Validate base64 length (approximate size check)
-      if (clean.length > CONFIG.MAX_FILE_SIZE * 1.37) { // base64 expands by ~37%
+      if (clean.length > CONFIG.MAX_FILE_SIZE * 1.37) {
         return json({ ok: false, error: 'Base64 data too large' }, 400);
       }
 
       fileBuffer = Buffer.from(clean, 'base64');
-      filename = body.filename || body.name || `upload-${Date.now()}.png`;
+      filename = body.filename || body.name || `upload-${Date.now()}${getFileExtension('', mimeType)}`;
       mimeType = body.contentType || mimeType;
     }
     // 3. Raw binary / base64 text
@@ -212,6 +260,7 @@ export default async function onRequest(context) {
 
       const inferred = contentType.startsWith('image/') ? contentType : 'image/png';
       mimeType = isValidImageType(inferred) ? inferred : 'image/png';
+      filename = `upload-${Date.now()}${getFileExtension('', mimeType)}`;
     }
 
     // Final validation: must be non-empty
@@ -219,8 +268,8 @@ export default async function onRequest(context) {
       return json({ ok: false, error: 'Empty file data' }, 400);
     }
 
-    // Generate unique key
-    const key = generateKey(filename);
+    // Generate unique key with original extension (URL 子链生成)
+    const key = generateKey(filename, mimeType);
 
     // Upload to EdgeOne Blob Storage
     const store = getStore();

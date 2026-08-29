@@ -1,27 +1,29 @@
 import { getStore } from '@edgeone/pages-blob';
 
 /**
- * EdgeOne Cloud Function - Image Upload API (Optimized Version)
+ * EdgeOne Cloud Function - Image Upload API (Rebuilt & Hardened)
  * 
  * Features:
- *   - Multiple upload methods (multipart/form-data, base64, raw binary)
- *   - Image list with pagination
- *   - Delete by key
- *   - CORS support
- *   - Input validation and sanitization
- *   - Error handling
+ *   - URL 子链生成：保留原始文件扩展名
+ *   - 多种上传方式 (multipart/form-data, base64, raw binary)
+ *   - 图片列表分页 (?limit=&cursor=)
+ *   - 安全删除验证
+ *   - CORS 支持
+ *   - 严格的输入验证和错误处理
+ *   - 文件大小和类型限制
  * 
  * Endpoints:
- *   POST /api/upload   - Upload image
- *   GET  /api/list     - List all images (supports ?limit=&cursor=)
- *   DELETE /api/delete - Delete image by key
- *   OPTIONS            - CORS preflight
+ *   POST   /api/upload   - Upload image
+ *   GET    /api/list     - List all images (supports ?limit=&cursor=)
+ *   DELETE /api/delete   - Delete image by key
+ *   OPTIONS              - CORS preflight
  */
 
-// Configuration
+// Configuration Center
 const CONFIG = {
   MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
   ALLOWED_TYPES: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
+  ALLOWED_EXTENSIONS: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'],
   DEFAULT_LIMIT: 50,
   MAX_LIMIT: 100,
   CACHE_CONTROL: 'public, max-age=31536000',
@@ -49,17 +51,58 @@ export default async function onRequest(context) {
     const url = new URL(context.request.url);
     const path = url.pathname;
 
-    // Helper: Validate image type
+    // Helper: Validate image MIME type
     const isValidImageType = (mimeType) => {
       if (!mimeType) return false;
       return CONFIG.ALLOWED_TYPES.includes(mimeType.toLowerCase());
+    };
+
+    // Helper: Validate file extension
+    const isValidExtension = (filename) => {
+      const ext = '.' + filename.split('.').pop().toLowerCase();
+      return CONFIG.ALLOWED_EXTENSIONS.includes(ext);
     };
 
     // Helper: Sanitize filename
     const sanitizeFilename = (filename) => {
       return String(filename || 'upload')
         .replace(/[^a-zA-Z0-9._-]/g, '-')
+        .replace(/-+/g, '-')
         .slice(0, 100);
+    };
+
+    // Helper: Extract extension from filename or MIME type
+    const getFileExtension = (filename, mimeType) => {
+      // Try to get from filename first
+      if (filename && filename.includes('.')) {
+        const ext = '.' + filename.split('.').pop().toLowerCase();
+        if (isValidExtension(ext)) {
+          return ext;
+        }
+      }
+      
+      // Fallback to MIME type mapping
+      const mimeToExt = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/gif': '.gif',
+        'image/webp': '.webp',
+        'image/svg+xml': '.svg'
+      };
+      
+      return mimeToExt[mimeType?.toLowerCase()] || '.png';
+    };
+
+    // Helper: Generate unique key with original extension (URL 子链生成)
+    const generateKey = (filename, mimeType) => {
+      const ext = getFileExtension(filename, mimeType);
+      const safeName = sanitizeFilename(filename.replace(/\.[^.]+$/, ''));
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).slice(2, 8);
+      
+      // URL 子链生成：保留原始扩展名
+      return `images/${dateStr}/${timestamp}-${random}-${safeName}${ext}`;
     };
 
     // GET /api/list - List all images with pagination
@@ -79,7 +122,7 @@ export default async function onRequest(context) {
       const items = (result.blobs || []).map(blob => ({
         key: blob.key,
         url: `${CONFIG.BASE_URL}/${blob.key}`,
-        size: blob.size,
+        size: blob.size || 0,
         contentType: blob.contentType || 'application/octet-stream',
         uploadedAt: blob.uploadedAt || new Date().toISOString()
       }));
@@ -96,13 +139,27 @@ export default async function onRequest(context) {
     // DELETE /api/delete?key=...
     if (context.request.method === 'DELETE' && path === '/api/delete') {
       const key = url.searchParams.get('key');
-      if (!key || !key.startsWith('images/')) {
-        return json({ ok: false, error: 'Invalid or missing key parameter' }, 400);
+      
+      // Strict validation: key must exist and start with 'images/'
+      if (!key) {
+        return json({ ok: false, error: 'Missing required parameter: key' }, 400);
+      }
+      
+      if (!key.startsWith('images/')) {
+        return json({ ok: false, error: 'Invalid key format: must start with "images/"' }, 400);
       }
 
       const store = getStore();
+      
+      // Verify the file exists before deletion
+      try {
+        await store.head(key);
+      } catch (headError) {
+        return json({ ok: false, error: 'File not found' }, 404);
+      }
+      
       await store.delete(key);
-      return json({ ok: true, message: 'Image deleted successfully' });
+      return json({ ok: true, message: 'Image deleted successfully', key });
     }
 
     // POST /api/upload - Upload image
@@ -119,7 +176,7 @@ export default async function onRequest(context) {
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
       const file = formData.get('file') || formData.get('image') || formData.get('upload');
-      if (!file) {
+      if (!file || !(file instanceof File)) {
         return json({ ok: false, error: 'Missing file field in multipart/form-data' }, 400);
       }
 
@@ -145,7 +202,7 @@ export default async function onRequest(context) {
     } else if (contentType.includes('application/json')) {
       const body = await request.json();
       const source = body.base64 || body.data || body.image || body.file;
-      if (typeof source !== 'string') {
+      if (typeof source !== 'string' || !source.trim()) {
         return json({ ok: false, error: 'JSON body must contain base64/data/image/file string' }, 400);
       }
 
@@ -166,16 +223,28 @@ export default async function onRequest(context) {
       }
 
       fileBuffer = Buffer.from(clean, 'base64');
-      filename = body.filename || body.name || `upload-${Date.now()}.png`;
+      filename = body.filename || body.name || `upload-${Date.now()}${getFileExtension('', mimeType)}`;
       mimeType = body.contentType || mimeType;
     } else {
       const text = await request.text();
       const trimmed = text.trim();
+      
+      // Try to decode as base64 first
       if (/^[A-Za-z0-9+/=\s]+$/.test(trimmed) && trimmed.length > 0) {
         fileBuffer = Buffer.from(trimmed.replace(/\s+/g, ''), 'base64');
       } else {
-        return json({ ok: false, error: 'Unsupported body format' }, 400);
+        // Treat as raw binary
+        fileBuffer = Buffer.from(text);
       }
+
+      // Validate size
+      if (fileBuffer.length > CONFIG.MAX_FILE_SIZE) {
+        return json({ ok: false, error: 'File too large' }, 400);
+      }
+
+      const inferred = contentType.startsWith('image/') ? contentType : 'image/png';
+      mimeType = isValidImageType(inferred) ? inferred : 'image/png';
+      filename = `upload-${Date.now()}${getFileExtension('', mimeType)}`;
     }
 
     // Final validation: must be non-empty
@@ -183,12 +252,8 @@ export default async function onRequest(context) {
       return json({ ok: false, error: 'Empty file data' }, 400);
     }
 
-    // Generate unique key with random suffix
-    const safeName = sanitizeFilename(filename);
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).slice(2, 8);
-    const key = `images/${dateStr}/${timestamp}-${random}-${safeName}`;
+    // Generate unique key with original extension (URL 子链生成)
+    const key = generateKey(filename, mimeType);
     
     const store = getStore();
 
@@ -212,7 +277,6 @@ export default async function onRequest(context) {
       ok: true,
       message: 'Image uploaded to EdgeOne Blob Storage',
       key,
-      uploadUrl,
       url: `${CONFIG.BASE_URL}/${key}`,
       size: fileBuffer.length,
       contentType: mimeType,
