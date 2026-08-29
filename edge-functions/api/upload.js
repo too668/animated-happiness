@@ -1,43 +1,54 @@
 import { getStore } from '@edgeone/pages-blob';
 
+/**
+ * EdgeOne Pages Function - Image Upload API
+ * 
+ * Endpoints:
+ *   POST /api/upload   - Upload image (multipart/base64/raw)
+ *   GET  /api/list     - List all images
+ *   DELETE /api/delete - Delete image by key
+ * 
+ * Deployment: edge-functions/api/upload.js
+ * Domain: https://yooy.cc.cd
+ */
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json; charset=utf-8'
+};
+
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), { status, headers: CORS_HEADERS });
+
 export default async function onRequest(context) {
-  const json = (data, status = 200) =>
-    new Response(JSON.stringify(data), {
-      status,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-      }
-    });
+  // Handle CORS preflight
+  if (context.request.method === 'OPTIONS') {
+    return new Response(JSON.stringify({ ok: true }), { headers: CORS_HEADERS });
+  }
+
+  const url = new URL(context.request.url);
+  const path = url.pathname;
 
   try {
-    // Handle CORS preflight
-    if (context.request.method === 'OPTIONS') {
-      return json({ ok: true, message: 'CORS preflight OK' });
-    }
-
-    const url = new URL(context.request.url);
-    const path = url.pathname;
-
-    // GET /api/list - List all images
+    // ─── GET /api/list ────────────────────────────────────────────────
     if (context.request.method === 'GET' && path === '/api/list') {
       const store = getStore();
       const { blobs } = await store.list({ prefix: 'images/' });
-      
+
       const items = blobs.map(blob => ({
         key: blob.key,
         url: `https://yooy.cc.cd/${blob.key}`,
-        size: blob.size,
+        size: blob.size || 0,
         contentType: blob.contentType || 'application/octet-stream',
         uploadedAt: blob.uploadedAt || new Date().toISOString()
       }));
 
-      return json({ ok: true, items });
+      return json({ ok: true, items, total: items.length });
     }
 
-    // DELETE /api/delete?key=...
+    // ─── DELETE /api/delete?key=... ──────────────────────────────────
     if (context.request.method === 'DELETE' && path === '/api/delete') {
       const key = url.searchParams.get('key');
       if (!key) {
@@ -46,10 +57,10 @@ export default async function onRequest(context) {
 
       const store = getStore();
       await store.delete(key);
-      return json({ ok: true, message: 'Image deleted successfully' });
+      return json({ ok: true, message: 'Deleted successfully' });
     }
 
-    // POST /api/upload - Upload image
+    // ─── POST /api/upload ────────────────────────────────────────────
     if (context.request.method !== 'POST' || path !== '/api/upload') {
       return json({ ok: false, error: 'Not found' }, 404);
     }
@@ -60,62 +71,85 @@ export default async function onRequest(context) {
     let filename = 'upload.png';
     let mimeType = 'image/png';
 
+    // 1. multipart/form-data
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
       const file = formData.get('file') || formData.get('image') || formData.get('upload');
-      if (!file) {
-        return json({ ok: false, error: 'Missing file field in multipart/form-data' }, 400);
+      if (!file || !(file instanceof File)) {
+        return json({ ok: false, error: 'Missing file field' }, 400);
       }
       fileBuffer = Buffer.from(await file.arrayBuffer());
       filename = file.name || filename;
-      mimeType = file.type || mimeType;
-    } else if (contentType.includes('application/json')) {
-      const body = await request.json();
-      const source = body.base64 || body.data || body.image || body.file;
-      if (typeof source !== 'string') {
-        return json({ ok: false, error: 'JSON body must contain base64/data/image/file string' }, 400);
+      mimeType = file.type || 'image/png';
+    }
+    // 2. JSON with base64
+    else if (contentType.includes('application/json')) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: 'Invalid JSON body' }, 400);
       }
-      const clean = source.replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').trim();
+      const source = body.base64 || body.data || body.image || body.file;
+      if (typeof source !== 'string' || !source.trim()) {
+        return json({ ok: false, error: 'Missing base64/data/image/file in JSON body' }, 400);
+      }
+      const clean = source.replace(/^data:image\/[a-zA-Z0-9+-.]+;base64,/, '').trim();
       fileBuffer = Buffer.from(clean, 'base64');
       filename = body.filename || body.name || filename;
       mimeType = body.contentType || mimeType;
-    } else {
+    }
+    // 3. Raw binary / base64 text
+    else {
       const text = await request.text();
       const trimmed = text.trim();
       if (/^[A-Za-z0-9+/=\s]+$/.test(trimmed) && trimmed.length > 0) {
         fileBuffer = Buffer.from(trimmed.replace(/\s+/g, ''), 'base64');
       } else {
-        return json({ ok: false, error: 'Unsupported body format' }, 400);
+        // Treat as raw binary
+        fileBuffer = Buffer.from(text);
       }
+      const inferred = contentType.startsWith('image/') ? contentType : 'image/png';
+      mimeType = inferred;
     }
 
-    const safeName = String(filename || 'upload.png').replace(/[^a-zA-Z0-9._-]/g, '-');
+    // Validate: must be non-empty
+    if (!fileBuffer || fileBuffer.length === 0) {
+      return json({ ok: false, error: 'Empty file data' }, 400);
+    }
+
+    // Generate unique key
+    const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, '-');
     const dateStr = new Date().toISOString().slice(0, 10);
     const key = `images/${dateStr}/${Date.now()}-${safeName}`;
-    const store = getStore();
 
-    const uploadUrl = await store.createUploadUrl(key, {
+    // Upload to EdgeOne Blob Storage
+    const store = getStore();
+    const presignedUrl = await store.createUploadUrl(key, {
       contentType: mimeType,
       cacheControl: 'public, max-age=31536000'
     });
 
-    const uploadRes = await fetch(uploadUrl, {
+    const uploadRes = await fetch(presignedUrl, {
       method: 'PUT',
       headers: { 'Content-Type': mimeType },
       body: fileBuffer
     });
 
     if (!uploadRes.ok) {
-      return json({ ok: false, error: 'EdgeOne Blob upload failed' }, 500);
+      return json({ ok: false, error: 'Storage upload failed' }, 500);
     }
 
     return json({
       ok: true,
-      message: 'Image uploaded to EdgeOne Blob Storage',
       key,
-      url: `https://yooy.cc.cd/${key}`
+      url: `https://yooy.cc.cd/${key}`,
+      size: fileBuffer.length,
+      contentType: mimeType
     }, 200);
+
   } catch (error) {
-    return json({ ok: false, error: error.message || 'Unknown error' }, 400);
+    console.error('[upload.js] Unexpected error:', error);
+    return json({ ok: false, error: error.message || 'Internal server error' }, 500);
   }
 }
