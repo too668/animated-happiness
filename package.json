@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@edgeone/pages-blob": "^0.0.16"
+    "@edgeone/pages-blob": "^0.0.16",
+    "aws-sdk-js-v3": "^0.0.2"
   }
 }

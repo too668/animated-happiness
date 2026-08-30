@@ -151,7 +151,9 @@ function compressToLimit(file, limit) {
 function uploadDirect(file) {
   var base = getApiBase();
   var contentType = file.type || 'application/octet-stream';
-  return asyncJson(base + '/api/upload-url', {
+  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  
+  return asyncJson(base + '/api/upload-url?storage=' + encodeURIComponent(storage), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: file.name, size: file.size, contentType: contentType })
@@ -161,7 +163,7 @@ function uploadDirect(file) {
     return fetch(signed.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': signed.contentType || contentType } })
       .then(function (r) {
         if (!r.ok) return r.text().then(function (t) { throw new Error('直传写入失败 HTTP ' + r.status + (t ? ' · ' + t.slice(0, 80) : '')); });
-        return { key: signed.key, url: signed.url, name: file.name, size: file.size, mode: '直传' };
+        return { key: signed.key, url: signed.url, name: file.name, size: file.size, mode: '直传', storage: signed.storage || storage };
       })
       .catch(function (e) {
         if (e instanceof TypeError) throw new Error('直传连接被中断，文件未上传成功。请重试，或改用「压缩中转」模式');
@@ -175,16 +177,18 @@ function uploadRelay(file) {
     return Promise.reject(new Error('中转只收图片，请用「原图直传」'));
   }
   var base = getApiBase();
+  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  
   return compressToLimit(file, RELAY_LIMIT).then(function (r) {
     var blob = r.blob || file;
     var name = r.name || file.name;
-    return asyncJson(base + '/api/upload?name=' + encodeURIComponent(name), {
+    return asyncJson(base + '/api/upload?name=' + encodeURIComponent(name) + '&storage=' + encodeURIComponent(storage), {
       method: 'PUT',
       headers: { 'Content-Type': blob.type || 'image/png' },
       body: blob
     }).then(function (res) {
       if (r.to) showToast(name + '：' + humanSize(r.from) + ' → ' + humanSize(r.to), 'info');
-      return { key: res.key, url: res.url, name: name, size: res.size, mode: '中转' };
+      return { key: res.key, url: res.url, name: name, size: res.size, mode: '中转', storage: res.storage || storage };
     });
   });
 }
@@ -252,7 +256,8 @@ function updateCounts(items) {
 var nextCursor = null;
 
 function syncFromServer() {
-  return asyncJson(getApiBase() + '/api/list?limit=100')
+  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  return asyncJson(getApiBase() + '/api/list?limit=100&storage=' + encodeURIComponent(storage))
     .then(function (res) {
       var aliases = getAliases();
       var items = res.items.map(function (it) {
@@ -262,6 +267,7 @@ function syncFromServer() {
           aliasOnly: Boolean(aliases[it.key]),
           url: it.url,
           type: it.type,
+          storage: it.storage || 'blob',
           uploadedAt: null
         };
       });
@@ -293,7 +299,8 @@ function loadMore() {
 }
 
 function deleteItem(key) {
-  return asyncJson(getApiBase() + '/api/delete?key=' + encodeURIComponent(key), { method: 'DELETE' })
+  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  return asyncJson(getApiBase() + '/api/delete?key=' + encodeURIComponent(key) + '&storage=' + encodeURIComponent(storage), { method: 'DELETE' })
     .then(function () { return true; })
     .catch(function (e) {
       if (/不存在/.test(e.message)) return true; // 服务器上已经没有了，本地照清
@@ -326,6 +333,7 @@ function renderList(items) {
   for (var i = 0; i < filtered.length; i++) {
     var it = filtered[i];
     var ext = extOf(it.key || it.name).toUpperCase();
+    var storageLabel = it.storage === 's3' ? '<span class="badge info" style="font-size:0.65rem;margin-left:6px;">S3</span>' : '<span class="badge success" style="font-size:0.65rem;margin-left:6px;">Blob</span>';
     html += '<div class="image-item" data-key="' + esc(it.key) + '">' +
       '<img src="' + esc(it.url) + '" alt="' + esc(it.name) + '" loading="lazy" />' +
       '<div class="image-meta">' +
@@ -336,7 +344,7 @@ function renderList(items) {
           '<button class="small-btn" data-a="copy" data-k="' + esc(it.key) + '" title="复制链接">' + ICONS.copy + '</button>' +
           '<button class="small-btn" data-a="alias" data-k="' + esc(it.key) + '" title="设置显示别名">' + ICONS.alias + '</button>' +
           '<button class="small-btn danger" data-a="delete" data-k="' + esc(it.key) + '" title="删除">' + ICONS.trash + '</button>' +
-        '</div></div></div>';
+        '</div></div><div class="row-inline" style="margin-top:4px;">' + storageLabel + '</div></div>';
   }
   root.innerHTML = html + moreBtn;
   refreshIcons();
