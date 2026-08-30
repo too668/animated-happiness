@@ -650,9 +650,10 @@ export async function onRequest(context) {
             return {
               key: k,
               name,
-              url: `https://${s3Host(context)}/${k}`,
+              url: publicUrl(origin, k),
               type: MIME_BY_EXT[extOf(k)] || 'application/octet-stream',
-              etag: null
+              etag: null,
+              storage: 's3'
             };
           });
           return json({ ok: true, items, total: items.length, storage: 's3' });
@@ -751,11 +752,10 @@ export async function onRequest(context) {
         const key = `uploads/${buildKey(safeName)}`;
         const pathname = '/' + key;
         const uploadUrl = await s3PresignPut(context, pathname, contentType, UPLOAD_URL_TTL);
-        const s3PublicUrl = `https://${s3Host(context)}/${key}`;
         return json({
           ok: true,
           key,
-          url: s3PublicUrl,
+          url: publicUrl(origin, key),
           uploadUrl,
           expiresAt: Date.now() + UPLOAD_URL_TTL * 1000,
           contentType,
