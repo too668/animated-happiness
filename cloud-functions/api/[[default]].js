@@ -309,7 +309,7 @@ export default async function onRequest(context) {
     }, 200);
 
   } catch (error) {
-    console.error("[upload.js] Error:", error?.message || error, error):', error);
+    console.error('[[upload.js]] Error:', error);
     return json({ 
       ok: false, 
       error: error.message || 'Internal server error' 
