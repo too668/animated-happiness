@@ -1,4 +1,6 @@
 import { getStore } from '@edgeone/pages-blob';
+// iDrive e2 S3 兼容存储支持
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from 'aws-sdk-js-v3';
 
 // EdgeOne Makers 图床 —— 控制面（路由 /api/*）
 //
@@ -7,8 +9,40 @@ import { getStore } from '@edgeone/pages-blob';
 
 const STORE_NAME = 'yoo-images';
 
+// iDrive e2 S3 配置
+const IDRIVE_ENDPOINT = 'https://s3.ap-northeast-1.idrivee2.com';
+const IDRIVE_REGION = 'ap-northeast-1';
+
+// 初始化 S3 客户端
+let s3Client = null;
+const envVarsGlobal = globalThis.env || {};
+
+function envVar(context, name) {
+  const envVars = (context && context.env) || envVarsGlobal;
+  const v = envVars[name];
+  return typeof v === 'string' && v.trim() ? v.trim() : '';
+}
+
+// 只在配置存在时创建 S3 客户端
+if (envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET')) {
+  const accessKeyId = envVar({ env: envVarsGlobal }, 'IDRIVE_ACCESS_KEY_ID');
+  const secretAccessKey = envVar({ env: envVarsGlobal }, 'IDRIVE_SECRET_ACCESS_KEY');
+  if (accessKeyId && secretAccessKey) {
+    s3Client = new S3Client({
+      region: IDRIVE_REGION,
+      endpoint: IDRIVE_ENDPOINT,
+      credentials: {
+        accessKeyId,
+        secretAccessKey
+      },
+      forcePathStyle: true
+    });
+  }
+}
+
 const RELAY_MAX_BYTES = 950 * 1024; // Edge 请求体上限 1MB，留出余量
 const DIRECT_MAX_BYTES = 20 * 1024 * 1024; // Blob 单值上限 25MB
+const S3_MAX_BYTES = 5 * 1024 * 1024 * 1024; // S3 单值上限 5GB
 const UPLOAD_URL_TTL = 600;
 const LIST_DEFAULT_LIMIT = 100;
 const LIST_MAX_LIMIT = 500;
@@ -29,6 +63,10 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 };
+
+// 支持的存储后端
+const STORAGE_BACKENDS = ['blob', 's3'];
+const DEFAULT_STORAGE = 'blob';
 
 const control = getStore({ name: STORE_NAME, consistency: 'strong' });
 const cached = getStore(STORE_NAME);
@@ -317,20 +355,35 @@ export async function onRequest(context) {
       } catch (e) {
         probe = { ok: false, error: e.message };
       }
-      let keysProbe;
-      try {
-        keysProbe = { ok: (await redis(context, ['PING'])) === 'PONG', backend: 'upstash-redis' };
-      } catch (e) {
-        keysProbe = { ok: false, backend: 'upstash-redis', error: e.message };
+      
+      // S3 健康检查
+      let s3Probe;
+      if (s3Available()) {
+        try {
+          const bucketName = envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET');
+          const command = new ListObjectsV2Command({
+            Bucket: bucketName,
+            Prefix: 'idrive/',
+            MaxKeys: 1
+          });
+          await s3Client.send(command);
+          s3Probe = { ok: true, backend: 's3-idrivee2' };
+        } catch (e) {
+          s3Probe = { ok: false, backend: 's3-idrivee2', error: e.message };
+        }
+      } else {
+        s3Probe = { ok: false, backend: 's3-idrivee2', reason: 'not-configured' };
       }
+      
       return json({
         ok: true,
         store: STORE_NAME,
         storage: probe,
-        keys: keysProbe,
+        s3: s3Probe,
         limits: {
           relayMaxBytes: RELAY_MAX_BYTES,
           directMaxBytes: DIRECT_MAX_BYTES,
+          s3MaxBytes: S3_MAX_BYTES,
           uploadUrlTtl: UPLOAD_URL_TTL
         },
         time: new Date().toISOString()
@@ -519,8 +572,12 @@ export async function onRequest(context) {
 
       const name = String(body.filename || body.name || 'file').split(/[\\/]/).pop();
       const size = Number(body.size);
-      if (Number.isFinite(size) && size > DIRECT_MAX_BYTES) {
-        return fail(`文件过大，直传上限 ${Math.floor(DIRECT_MAX_BYTES / 1024 / 1024)}MB`);
+      
+      const storageParam = getStorageParam(url);
+      const maxBytes = storageParam === 's3' ? S3_MAX_BYTES : DIRECT_MAX_BYTES;
+      
+      if (Number.isFinite(size) && size > maxBytes) {
+        return fail(`文件过大，${storageParam === 's3' ? 'S3' : '直传'}上限 ${Math.floor(maxBytes / 1024 / 1024)}MB`);
       }
 
       const contentType =
@@ -528,22 +585,42 @@ export async function onRequest(context) {
           ? body.contentType
           : 'application/octet-stream';
 
-      const key = buildKey(name);
-      // createUploadUrl 会把 Content-Type 签进地址，客户端 PUT 时必须原样带回，否则 403
-      const signed = await control.createUploadUrl(key, {
-        expireSeconds: UPLOAD_URL_TTL,
-        contentType
-      });
+      if (storageParam === 's3') {
+        if (!s3Available()) return fail('S3 存储未配置', 500);
+        
+        const s3Key = getS3Key(name);
+        const signedUrl = await generateSignedUrl(s3Key, contentType, context);
+        
+        return json({
+          ok: true,
+          key: s3Key,
+          url: `${IDRIVE_ENDPOINT}/${envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET')}/${s3Key}`,
+          uploadUrl: signedUrl,
+          expiresAt: Date.now() + UPLOAD_URL_TTL * 1000,
+          contentType,
+          method: 'PUT',
+          storage: 's3'
+        });
+      } else {
+        // Blob（默认）
+        const key = buildKey(name);
+        // createUploadUrl 会把 Content-Type 签进地址，客户端 PUT 时必须原样带回，否则 403
+        const signed = await control.createUploadUrl(key, {
+          expireSeconds: UPLOAD_URL_TTL,
+          contentType
+        });
 
-      return json({
-        ok: true,
-        key,
-        url: publicUrl(origin, key),
-        uploadUrl: signed.url,
-        expiresAt: signed.expiresAt,
-        contentType,
-        method: 'PUT'
-      });
+        return json({
+          ok: true,
+          key,
+          url: publicUrl(origin, key),
+          uploadUrl: signed.url,
+          expiresAt: signed.expiresAt,
+          contentType,
+          method: 'PUT',
+          storage: 'blob'
+        });
+      }
     }
 
     // ── PUT|POST /api/upload ───────────────────────────────────────
@@ -581,12 +658,21 @@ export async function onRequest(context) {
       }
 
       if (!bytes || bytes.byteLength === 0) return fail('文件内容为空');
-      if (bytes.byteLength > RELAY_MAX_BYTES) {
-        return fail(
-          `中转上限 ${Math.floor(RELAY_MAX_BYTES / 1024)}KB（Edge 请求体 1MB），` +
-          '更大的文件请用 POST /api/upload-url 直传',
-          413
-        );
+      
+      // 根据目标存储检查大小限制
+      const storageParam = getStorageParam(url);
+      if (storageParam === 's3') {
+        if (bytes.byteLength > S3_MAX_BYTES) {
+          return fail(`S3 中转上限 ${Math.floor(S3_MAX_BYTES / 1024 / 1024)}MB`, 413);
+        }
+      } else {
+        if (bytes.byteLength > RELAY_MAX_BYTES) {
+          return fail(
+            `中转上限 ${Math.floor(RELAY_MAX_BYTES / 1024)}KB（Edge 请求体 1MB），` +
+            '更大的文件请用 POST /api/upload-url 直传',
+            413
+          );
+        }
       }
 
       const ext = extOf(name);
@@ -600,23 +686,42 @@ export async function onRequest(context) {
       }
 
       const finalName = name || `image${ext || extFromMime(contentType)}`;
-      const key = buildKey(finalName);
 
-      // 只能存字节；Content-Type 由 serve 路由按扩展名推导。
-      // cacheControl 与 /i/ 路由保持一致（1 小时）：目前出图以路由头为准，
-      // 但对象上留个一年值是个地雷，哪天改成透传元信息就会复活「删了还能看一年」。
-      await control.set(key, bytes, {
-        cacheControl: 'public, max-age=3600'
-      });
+      if (storageParam === 's3') {
+        if (!s3Available()) return fail('S3 存储未配置', 500);
+        
+        const s3Result = await uploadToS3(bytes, finalName, contentType);
+        
+        return json({
+          ok: true,
+          key: s3Result.key,
+          url: `${IDRIVE_ENDPOINT}/${envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET')}/${s3Result.key}`,
+          size: bytes.byteLength,
+          contentType,
+          name: s3Result.key.split('/').pop(),
+          storage: 's3'
+        });
+      } else {
+        // Blob（默认）
+        const key = buildKey(finalName);
 
-      return json({
-        ok: true,
-        key,
-        url: publicUrl(origin, key),
-        size: bytes.byteLength,
-        contentType,
-        name: key.split('/').pop()
-      });
+        // 只能存字节；Content-Type 由 serve 路由按扩展名推导。
+        // cacheControl 与 /i/ 路由保持一致（1 小时）：目前出图以路由头为准，
+        // 但对象上留个一年值是个地雷，哪天改成透传元信息就会复活「删了还能看一年」。
+        await control.set(key, bytes, {
+          cacheControl: 'public, max-age=3600'
+        });
+
+        return json({
+          ok: true,
+          key,
+          url: publicUrl(origin, key),
+          size: bytes.byteLength,
+          contentType,
+          name: key.split('/').pop(),
+          storage: 'blob'
+        });
+      }
     }
 
     // ── DELETE /api/delete ─────────────────────────────────────────
@@ -625,13 +730,160 @@ export async function onRequest(context) {
       if (gate) return gate;
       const { key, error } = await readKeyParam(url);
       if (error) return fail(error);
+      
+      const storageParam = getStorageParam(url);
+      
+      let deleted = false;
+      let deletedKey = key;
+      
+      if (storageParam === 's3') {
+        if (!s3Available()) return fail('S3 存储未配置', 500);
+        
+        try {
+          const bucketName = envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET');
+          const cleanKey = key.startsWith('idrive/') ? key : `idrive/${key}`;
+          
+          // 检查 S3 是否存在并删除
+          const listCommand = new ListObjectsV2Command({
+            Bucket: bucketName,
+            Prefix: cleanKey,
+            MaxKeys: 1
+          });
+          
+          const response = await s3Client.send(listCommand);
+          if ((response.Contents || []).length > 0) {
+            const deleteCommand = new DeleteObjectCommand({
+              Bucket: bucketName,
+              Key: cleanKey
+            });
+            
+            await s3Client.send(deleteCommand);
+            deleted = true;
+            deletedKey = cleanKey;
+          }
+        } catch (e) {
+          return fail(`删除失败：${e.message}`, 500);
+        }
+      } else {
+        // Blob（默认）
+        const meta = await control.getMetadata(key);
+        if (!meta) return fail('文件不存在', 404);
+        
+        await control.delete(key);
+        deleted = true;
+        deletedKey = key;
+      }
+      
+      if (!deleted) {
+        return fail('文件不存在', 404);
+      }
+      
+      return json({ ok: true, key: deletedKey, message: '已删除', storage: deletedKey.startsWith('idrive/') ? 's3' : 'blob' });
+    }
 
-      // Store 上没有 head()，判存在要用 getMetadata()
-      const meta = await control.getMetadata(key);
-      if (!meta) return fail('文件不存在', 404);
+    // ── 辅助函数：解析 storage 参数 ───────────────────────────────────
+    function getStorageParam(url) {
+      const storage = url.searchParams.get('storage') || url.searchParams.get('bucket');
+      if (!storage || !STORAGE_BACKENDS.includes(storage)) {
+        return DEFAULT_STORAGE;
+      }
+      return storage;
+    }
 
-      await control.delete(key);
-      return json({ ok: true, key, message: '已删除' });
+    // ── 辅助函数：检查 S3 是否可用 ─────────────────────────────────────
+    function s3Available() {
+      return s3Client !== null && envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET') !== '';
+    }
+
+    // ── 辅助函数：获取 S3 key（带 idrive/ 前缀） ─────────────────────────
+    function getS3Key(name) {
+      const now = new Date();
+      const yyyy = now.getUTCFullYear();
+      const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+      const ext = extOf(name) || '.bin';
+      return `idrive/${yyyy}/${mm}/${randomId()}-${slugify(name)}${ext}`;
+    }
+
+    // ── 辅助函数：S3 上传 ──────────────────────────────────────────────
+    async function uploadToS3(bytes, name, contentType) {
+      if (!s3Available()) throw new Error('S3 存储未配置');
+      
+      const key = getS3Key(name);
+      const command = new PutObjectCommand({
+        Bucket: envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET'),
+        Key: key,
+        Body: bytes,
+        ContentType: contentType
+      });
+      
+      await s3Client.send(command);
+      return {
+        key,
+        url: `${IDRIVE_ENDPOINT}/${envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET')}/${key}`
+      };
+    }
+
+    // ── 辅助函数：生成 S3 预签名 URL (SigV4) ───────────────────────────
+    async function generateSignedUrl(key, contentType, ctx) {
+      if (!s3Available()) throw new Error('S3 未配置');
+      
+      const accessKeyId = envVar(ctx.env || { env: envVarsGlobal }, 'IDRIVE_ACCESS_KEY_ID');
+      const secretAccessKey = envVar(ctx.env || { env: envVarsGlobal }, 'IDRIVE_SECRET_ACCESS_KEY');
+      
+      const date = new Date();
+      const amzDate = date.toISOString().replace(/[:-]|\.\d\d\d/g, '');
+      const shortDate = amzDate.slice(0, 8);
+      
+      const region = IDRIVE_REGION;
+      const service = 's3';
+      const bucketName = envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET');
+      
+      const credential = `${accessKeyId}/${shortDate}/${region}/${service}/aws4_request`;
+      const host = IDRIVE_ENDPOINT.replace(/^https?:\/\//, '').split('/')[0];
+      const headers = `host\n`;
+      const signedHeaders = 'host';
+      
+      const queryStr = `X-Amz-Algorithm=AWS4-HMAC-SHA256&` +
+                       `X-Amz-Credential=${encodeURIComponent(credential)}&` +
+                       `X-Amz-Date=${amzDate}&` +
+                       `X-Amz-Expires=${UPLOAD_URL_TTL}&` +
+                       `X-Amz-SignedHeaders=${signedHeaders}`;
+      
+      const uriPath = `/${bucketName}/${key}`;
+      const canonicalRequest = `PUT\n${uriPath}\n${queryStr}\n${headers}UNSIGNED-PAYLOAD`;
+      
+      const scope = `${shortDate}/${region}/${service}/aws4_request`;
+      const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n` + hashHex(canonicalRequest);
+      
+      const kDate = hmacSha256('AWS4' + secretAccessKey, shortDate);
+      const kRegion = hmacSha256(kDate, region);
+      const kService = hmacSha256(kRegion, service);
+      const kSigning = hmacSha256(kService, 'aws4_request');
+      const signature = hmacSha256(kSigning, stringToSign);
+      
+      const fullQuery = `${queryStr}&X-Amz-Signature=${signature}`;
+      return `${IDRIVE_ENDPOINT}${uriPath}?${fullQuery}`;
+    }
+
+    // ── SHA256 hash helper ──────────────────────────────────────────────
+    async function hashHex(data) {
+      const encoder = new TextEncoder();
+      const buf = await crypto.subtle.digest('SHA-256', encoder.encode(data));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // ── HMAC-SHA256 helper ──────────────────────────────────────────────
+    async function hmacSha256(key, data) {
+      const encoder = new TextEncoder();
+      const keyBuf = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(key),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const sigBuf = await crypto.subtle.sign('HMAC', keyBuf, encoder.encode(data));
+      return Array.from(new Uint8Array(sigBuf)).map(b => String.fromCharCode(b)).join('');
     }
 
     return fail('接口不存在', 404);
