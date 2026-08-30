@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@latest" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -77,10 +77,7 @@
         <h3>上传方式二：JSON + Base64</h3>
         <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
   -H "Content-Type: application/json" \
-  -d '{
-    "filename": "demo.png",
-    "base64": "data:image/png;base64,iVBORw0KGgo..."
-  }'</code></pre>
+  -d '{"filename":"demo.png","base64":"data:image/png;base64,iVBORw0KGgo..."}'</code></pre>
 
         <h3>上传方式三：纯二进制流</h3>
         <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
@@ -91,79 +88,99 @@
         <pre><code>{
   "ok": true,
   "message": "Image uploaded to EdgeOne Blob Storage",
-  "key": "images/2026-08-29/1724900000000-abc123-demo.png",
-  "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-abc123-demo.png"
+  "key": "images/2026-08-30/1725000000000-abc123-demo.png",
+  "url": "https://yooy.cc.cd/images/2026-08-30/1725000000000-abc123-demo.png"
 }</code></pre>
       </div>
 
       <!-- List Endpoint -->
       <div class="card" style="margin-bottom:20px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-          <code style="background:rgba(78,161,255,0.12);color:#93c5fd;border-color:rgba(78,161,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
+          <code style="background:rgba(64,158,255,0.12);color:#409eff;border-color:rgba(64,158,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
           <code style="font-size:1rem;">/api/list</code>
-          <span class="badge">
-            <i data-lucide="list" class="icon-xs"></i>
-            <span>列表接口</span>
-          </span>
+          <span class="badge">可选分页</span>
         </div>
-        <p style="color:var(--muted);margin:0 0 16px;">获取当前存储中所有图片对象列表，支持分页查询。</p>
-        <pre><code>curl "https://yooy.cc.cd/api/list"
-# 分页: curl "https://yooy.cc.cd/api/list?limit=20&cursor=xxx"</code></pre>
+        <h3>接口说明</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">获取所有图片列表，支持分页参数。</p>
 
-        <h3 style="margin-top:16px;">响应体</h3>
+        <h3>请求参数</h3>
+        <table style="margin-bottom:16px;">
+          <thead>
+            <tr><th>参数</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>50</td><td>每页数量，最大 100</td></tr>
+            <tr><td><code>cursor</code></td><td>string</td><td>-</td><td>分页游标，上次返回的 nextCursor</td></tr>
+          </tbody>
+        </table>
+
+        <h3>示例请求</h3>
+        <pre><code>curl "https://yooy.cc.cd/api/list?limit=20"</code></pre>
+
+        <h3>响应体</h3>
         <pre><code>{
   "ok": true,
   "items": [
     {
-      "key": "images/2026-08-29/1724900000000-abc123-demo.png",
-      "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-abc123-demo.png",
+      "key": "images/2026-08-30/1725000000000-abc123.png",
+      "url": "https://yooy.cc.cd/images/2026-08-30/1725000000000-abc123.png",
       "size": 102400,
       "contentType": "image/png",
-      "uploadedAt": "2026-08-29T12:00:00.000Z"
+      "uploadedAt": "2026-08-30T10:00:00.000Z"
     }
   ],
   "total": 1,
+  "nextCursor": null,
   "hasMore": false
 }</code></pre>
       </div>
 
       <!-- Delete Endpoint -->
-      <div class="card">
+      <div class="card" style="margin-bottom:20px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-          <code style="background:rgba(251,113,133,0.12);color:#fda4af;border-color:rgba(251,113,133,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">DELETE</code>
+          <code style="background:rgba(245,108,108,0.12);color:#f56c6c;border-color:rgba(245,108,108,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">DELETE</code>
           <code style="font-size:1rem;">/api/delete</code>
           <span class="badge danger">
             <i data-lucide="trash-2" class="icon-xs"></i>
-            <span>删除接口</span>
+            <span>危险操作</span>
           </span>
         </div>
-        <p style="color:var(--muted);margin:0 0 16px;">根据 key 删除指定图片对象。key 格式：<code>images/YYYY-MM-DD/timestamp-random-filename.ext</code></p>
-        <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=images/2026-08-29/1724900000000-demo.png"</code></pre>
+        <h3>接口说明</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">根据 key 删除图片，key 必须以 <code>images/</code> 开头。</p>
 
-        <h3 style="margin-top:16px;">响应体</h3>
+        <h3>请求参数</h3>
+        <table style="margin-bottom:16px;">
+          <thead>
+            <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>key</code></td><td>string</td><td>是</td><td>图片存储键，格式: images/日期/时间戳-随机-文件名.ext</td></tr>
+          </tbody>
+        </table>
+
+        <h3>示例请求</h3>
+        <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=images%2F2026-08-30%2F1725000000000-abc123.png"</code></pre>
+
+        <h3>响应体</h3>
         <pre><code>{
   "ok": true,
   "message": "Deleted successfully",
-  "key": "images/2026-08-29/1724900000000-demo.png"
+  "key": "images/2026-08-30/1725000000000-abc123.png"
 }</code></pre>
       </div>
 
-      <!-- Error Responses -->
-      <div class="card" style="margin-top:20px;">
-        <h3 style="display:flex;align-items:center;gap:8px;">
+      <!-- Notes -->
+      <div class="card" style="border-color:rgba(230,162,60,0.3);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
           <i data-lucide="alert-circle" class="icon-md" style="color:var(--warning);"></i>
-          <span>错误响应</span>
-        </h3>
-        <pre><code>{
-  "ok": false,
-  "error": "Missing file field in multipart/form-data"
-}</code></pre>
-        <p style="color:var(--muted);margin-top:12px;">常见错误：</p>
-        <ul style="color:var(--muted);line-height:2;">
-          <li><code>Missing file field</code> — 未提供文件</li>
-          <li><code>Invalid file type</code> — 不支持的文件格式</li>
-          <li><code>File too large</code> — 超过 10MB 限制</li>
-          <li><code>File not found</code> — 删除时 key 不存在</li>
+          <h3 style="margin:0;color:var(--warning);">注意事项</h3>
+        </div>
+        <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
+          <li>所有接口均支持跨域 (CORS)，可直接在前端调用</li>
+          <li>单次上传文件大小限制：<strong>10MB</strong></li>
+          <li>支持的图片格式：JPEG、PNG、GIF、WebP、SVG</li>
+          <li>URL 子链会自动保留原始文件扩展名（如 .jpg、.png）</li>
+          <li>删除操作不可撤销，请谨慎操作</li>
         </ul>
       </div>
     </section>
@@ -173,17 +190,17 @@
     <div class="footer-content">
       <div class="footer-brand">
         <svg class="brand-logo-small" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="32" height="32" rx="8" fill="url(#brand-gradient-f2)"/>
+          <rect width="32" height="32" rx="8" fill="url(#brand-gradient-f3)"/>
           <path d="M10 22V14L16 18L22 14V22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
           <defs>
-            <linearGradient id="brand-gradient-f2" x1="0" y1="0" x2="32" y2="32">
+            <linearGradient id="brand-gradient-f3" x1="0" y1="0" x2="32" y2="32">
               <stop stop-color="#409EFF"/>
               <stop offset="1" stop-color="#00C6FB"/>
             </linearGradient>
           </defs>
         </svg>
         <div>
-          <div style="font-weight:600;color:var(--text);margin-bottom:4px;">YOO · API 文档</div>
+          <div style="font-weight:600;color:var(--text);margin-bottom:4px;">YOO · 图片托管</div>
           <div style="font-size:0.75rem;color:var(--muted);">安全 · 快速 · 可靠</div>
         </div>
       </div>
@@ -197,6 +214,5 @@
 
   <div id="toastContainer" class="toast-container"></div>
   <script src="./script.js"></script>
-  <script>if (window.lucide) lucide.createIcons();</script>
 </body>
 </html>

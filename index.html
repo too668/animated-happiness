@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@latest" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -92,7 +92,7 @@
             <h3 style="margin:0;">边缘加速</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            基于 Cloudflare EdgeOne 边缘网络，图片全球加速访问，低延迟高可用。
+            基于 EdgeOne 边缘网络，图片全球加速访问，低延迟高可用。
           </p>
         </div>
         <div class="card">
@@ -101,16 +101,16 @@
             <h3 style="margin:0;">安全可靠</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            严格文件大小与类型校验，CORS 全接口支持，防恶意上传。
+            文件存储在 EdgeOne Blob Storage，自动 CDN 分发，数据持久可靠。
           </p>
         </div>
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
             <i data-lucide="link" class="icon-md" style="color:var(--warning);"></i>
-            <h3 style="margin:0;">直链访问</h3>
+            <h3 style="margin:0;">URL 子链</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            上传后直接返回可访问的公开 URL，支持子链保留原始扩展名，直接嵌入网页。
+            上传时自动保留原始文件扩展名，生成的 URL 直接指向图片文件。
           </p>
         </div>
         <div class="card">
@@ -119,31 +119,32 @@
             <h3 style="margin:0;">多种上传</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            支持 multipart/form-data、JSON Base64、纯二进制流三种上传方式，灵活适配各类场景。
+            支持 multipart/form-data、Base64 JSON、二进制流三种上传方式。
           </p>
         </div>
       </div>
     </section>
 
-    <section class="section">
-      <h2>服务状态</h2>
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-value">EdgeOne</div>
-          <div class="stat-label">边缘网络</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">CORS</div>
-          <div class="stat-label">全接口跨域</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">10MB</div>
-          <div class="stat-label">单文件上限</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">∞</div>
-          <div class="stat-label">容量无上限</div>
-        </div>
+    <section class="section" style="border-bottom:none;">
+      <h2>快速开始</h2>
+      <div class="card" style="margin-top:12px;">
+        <h3>Step 1：上传图片</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">拖拽图片到管理后台，或点击选择文件。支持 PNG、JPG、GIF、WebP 格式。</p>
+        <a href="./upload.html" class="button primary" style="text-decoration:none;display:inline-flex;">
+          <i data-lucide="upload" class="icon-sm"></i>
+          去上传
+        </a>
+      </div>
+      <div class="card" style="margin-top:12px;">
+        <h3>Step 2：获取图片 URL</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">上传成功后，点击「查看」在新标签页打开图片，或点击「复制」获取直链 URL。</p>
+        <pre style="margin:0;"><code>https://yooy.cc.cd/images/2026-08-30/1725000000000-abc123-myimage.png</code></pre>
+      </div>
+      <div class="card" style="margin-top:12px;">
+        <h3>Step 3：使用 API</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">通过 HTTP API  programmatically 上传图片，返回 JSON 响应包含公开访问 URL。</p>
+        <pre style="margin:0;"><code>curl -X POST "https://yooy.cc.cd/api/upload" \
+  -F "file=@photo.jpg"</code></pre>
       </div>
     </section>
   </main>
@@ -152,10 +153,10 @@
     <div class="footer-content">
       <div class="footer-brand">
         <svg class="brand-logo-small" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="32" height="32" rx="8" fill="url(#brand-gradient-f)"/>
+          <rect width="32" height="32" rx="8" fill="url(#brand-gradient-f3)"/>
           <path d="M10 22V14L16 18L22 14V22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
           <defs>
-            <linearGradient id="brand-gradient-f" x1="0" y1="0" x2="32" y2="32">
+            <linearGradient id="brand-gradient-f3" x1="0" y1="0" x2="32" y2="32">
               <stop stop-color="#409EFF"/>
               <stop offset="1" stop-color="#00C6FB"/>
             </linearGradient>
@@ -176,6 +177,5 @@
 
   <div id="toastContainer" class="toast-container"></div>
   <script src="./script.js"></script>
-  <script>if (window.lucide) lucide.createIcons();</script>
 </body>
 </html>

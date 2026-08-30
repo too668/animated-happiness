@@ -3,13 +3,110 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YOO · 管理后台</title>
-  <meta name="description" content="YOO 图片管理后台 - 拖拽上传、批量管理、一键复制" />
+  <title>YOO · 图片管理</title>
+  <meta name="description" content="YOO 图片管理后台，支持上传、预览、复制链接、批量管理。" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+  <style>
+    /* ── Admin-specific tweaks ── */
+    .admin-header {
+      background: linear-gradient(135deg, rgba(64,158,255,0.06) 0%, rgba(0,198,251,0.06) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 24px 0;
+    }
+    .admin-header h1 { margin:0 0 6px; font-size:1.5rem; }
+    .admin-header p { color:var(--muted); margin:0 0 20px; font-size:0.9rem; }
+    .stats-row {
+      display:flex; gap:12px; flex-wrap:wrap;
+    }
+    .stat-card {
+      background:var(--card-bg);
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:14px 18px;
+      flex:1; min-width:120px;
+      display:flex; align-items:center; gap:10px;
+    }
+    .stat-card .stat-icon {
+      width:36px; height:36px;
+      border-radius:8px;
+      display:flex; align-items:center; justify-content:center;
+      flex-shrink:0;
+    }
+    .stat-card .stat-num {
+      font-size:1.3rem; font-weight:700; line-height:1;
+    }
+    .stat-card .stat-label {
+      font-size:0.72rem; color:var(--muted); margin-top:2px;
+    }
+    .toolbar {
+      display:flex; gap:8px; align-items:center;
+      flex-wrap:wrap; margin:20px 0 12px;
+    }
+    .toolbar input[type="text"] {
+      flex:1; min-width:160px; max-width:320px;
+    }
+    .toolbar input[type="text"]::placeholder { color:var(--muted); }
+    .image-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+      gap:16px;
+    }
+    .image-item {
+      position:relative;
+      background:var(--card-bg);
+      border:1px solid var(--border);
+      border-radius:12px;
+      overflow:hidden;
+      transition:border-color 0.2s;
+    }
+    .image-item:hover { border-color:var(--brand); }
+    .image-item img {
+      width:100%; height:140px; object-fit:cover;
+      display:block; background:var(--surface);
+    }
+    .image-meta {
+      padding:10px 12px;
+    }
+    .image-meta strong {
+      font-size:0.82rem; display:block;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .image-meta .muted {
+      font-size:0.7rem; margin-bottom:8px;
+    }
+    .row-inline {
+      display:flex; gap:6px;
+    }
+    .small-btn {
+      width:28px; height:28px;
+      display:flex; align-items:center; justify-content:center;
+      border-radius:6px;
+      border:1px solid var(--border);
+      background:var(--bg);
+      color:var(--text);
+      cursor:pointer;
+      transition:all 0.15s;
+      flex-shrink:0;
+    }
+    .small-btn:hover { border-color:var(--brand); color:var(--brand); }
+    .small-btn.danger:hover { border-color:var(--danger); color:var(--danger); }
+    .empty {
+      grid-column:1/-1;
+      text-align:center; padding:60px 20px;
+      color:var(--muted);
+    }
+    .empty svg { width:48px; height:48px; margin-bottom:12px; opacity:0.4; }
+    .drop-zone-label {
+      font-size:0.8rem; color:var(--muted); margin-top:6px; text-align:center;
+    }
+    @media(max-width:480px) {
+      .image-grid { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
+    }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -52,50 +149,83 @@
     </div>
   </header>
 
+  <!-- ── Admin Header ── -->
+  <div class="admin-header">
+    <div class="container">
+      <h1>🎨 图片管理</h1>
+      <p>拖拽上传图片，管理你的图片资源，获取公开访问 URL。</p>
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(64,158,255,0.12);color:var(--brand);">
+            <i data-lucide="image" class="icon-md"></i>
+          </div>
+          <div>
+            <div class="stat-num" id="totalCount">0</div>
+            <div class="stat-label">图片总数</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(45,212,191,0.12);color:#2dd4bf;">
+            <i data-lucide="cloud-upload" class="icon-md"></i>
+          </div>
+          <div>
+            <div class="stat-num">3</div>
+            <div class="stat-label">上传方式</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(167,139,250,0.12);color:#a78bfa;">
+            <i data-lucide="server" class="icon-md"></i>
+          </div>
+          <div>
+            <div class="stat-num">EdgeOne</div>
+            <div class="stat-label">存储服务</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <main class="container">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-      <h1>图片管理</h1>
-      <div class="row">
-        <input type="text" id="apiEndpoint" placeholder="API 地址" value="https://yooy.cc.cd"
-          style="width:240px;padding:8px 12px;font-size:0.85rem;" />
-        <button id="refreshListBtn" class="secondary-btn">
-          <i data-lucide="refresh-cw" class="icon-sm"></i>
-          <span>刷新</span>
-        </button>
-        <span id="totalCount" class="muted">加载中...</span>
+    <!-- Upload Zone -->
+    <section class="card" style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <h3>上传文件</h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label style="font-size:0.75rem;color:var(--muted);white-space:nowrap;">API 地址：</label>
+          <input type="text" id="apiEndpoint" value="https://yooy.cc.cd" style="width:180px;font-size:0.75rem;" />
+        </div>
       </div>
-    </div>
-
-    <!-- Upload Area -->
-    <div class="card" style="margin-bottom:24px;">
-      <div class="upload-area" id="dropZone">
-        <i data-lucide="upload-cloud" class="icon-xl" style="color:var(--brand);margin-bottom:12px;"></i>
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-zone-icon">
+          <i data-lucide="cloud-upload" class="icon-lg"></i>
+        </div>
         <p><strong>点击或拖拽图片到此处上传</strong></p>
-        <p>PNG / JPG / GIF / WEBP，最大 10MB</p>
-        <input type="file" id="uploadInput" accept="image/*" multiple style="display:none" />
-      </div>
-      <div style="text-align:center;margin-top:14px;">
-        <button id="uploadBtn" class="button primary">
+        <p class="drop-zone-label">支持 JPG / PNG / GIF / WebP，单个文件最大 10MB</p>
+        <button type="button" id="uploadBtn" class="button primary" style="margin-top:12px;">
           <i data-lucide="upload" class="icon-sm"></i>
-          <span>开始上传</span>
+          选择文件上传
         </button>
+        <input type="file" id="uploadInput" accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml" multiple style="display:none" />
       </div>
+    </section>
+
+    <!-- Controls -->
+    <div class="toolbar">
+      <button id="refreshListBtn" class="button secondary" type="button">
+        <i data-lucide="refresh-cw" class="icon-sm"></i>
+        刷新列表
+      </button>
+      <input type="text" id="searchInput" placeholder="搜索图片名称..." class="input" />
+      <span style="font-size:0.8rem;color:var(--muted);margin-left:auto;" id="countLabel">共 0 张</span>
     </div>
 
-    <!-- Search & Filter -->
-    <div class="row" style="margin-bottom:16px;">
-      <input type="text" id="searchInput" placeholder="🔍 搜索图片名称..." style="max-width:320px;" />
-      <select id="sortSelect" style="padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-family:inherit;cursor:pointer;">
-        <option value="newest">最新上传</option>
-        <option value="oldest">最早上传</option>
-        <option value="name">按名称排序</option>
-        <option value="size">按大小排序</option>
-      </select>
-    </div>
-
-    <!-- Image List -->
-    <div id="imageList" class="image-list">
-      <div class="empty">正在加载...</div>
+    <!-- Image Grid -->
+    <div id="imageList" class="image-grid">
+      <div class="empty">
+        <i data-lucide="image" class="icon-lg" style="opacity:0.3;"></i>
+        <p>暂无图片，点击上方按钮上传第一张图片吧！</p>
+      </div>
     </div>
   </main>
 
@@ -127,6 +257,5 @@
 
   <div id="toastContainer" class="toast-container"></div>
   <script src="./script.js"></script>
-  <script>if (window.lucide) lucide.createIcons();</script>
 </body>
 </html>
