@@ -78,7 +78,9 @@ export async function onRequest(context) {
 
   const headers = {
     'Content-Type': contentType,
-    'Cache-Control': 'public, max-age=31536000, immutable',
+    // max-age 只给 1 小时：对象删除后源站会返回 404，缓存副本需在此窗口内被替换掉。
+    // 过期后靠 stale-while-revalidate 继续命中，同时后台回源刷新。
+    'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400, immutable',
     'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${name}"`,
     'X-Content-Type-Options': knownType ? 'nosniff' : 'default'
   };

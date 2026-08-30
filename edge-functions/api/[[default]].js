@@ -205,7 +205,8 @@ export async function onRequest(context) {
     if (request.method === 'GET' && route === 'meta') {
       const { key, error } = await readKeyParam(url);
       if (error) return fail(error);
-      const meta = await cached.getMetadata(key);
+      // 走强一致句柄：最终一致的读会返回已删除对象的旧元信息，谎报存在
+      const meta = await control.getMetadata(key);
       if (!meta) return fail('文件不存在', 404);
       return json({ ok: true, key, url: publicUrl(origin, key), meta });
     }

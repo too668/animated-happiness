@@ -142,11 +142,12 @@
           <strong style="color:var(--text);">Blob 存储不存在任何公开读取地址</strong>——官方 API 里没有 <code>getDownloadUrl</code> 之类的方法，签好的上传地址又只能 PUT，拿来读会 403。所以图片必须由这个路由把字节读出来再吐回去。<strong style="color:var(--text);">你要复制去分享的链接就是它。</strong>
         </p>
         <pre><code>curl -I "https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png"
-# HTTP 200 · Content-Type: image/png · Cache-Control: public, max-age=31536000, immutable</code></pre>
+# HTTP 200 · Content-Type: image/png · Cache-Control: public, max-age=3600, stale-while-revalidate=86400, immutable</code></pre>
         <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
           <li>Content-Type 按 key 的扩展名推导；扩展名不在图片清单里会以 <code>application/octet-stream</code> 强制下载，避免这个域名被拿来执行上传的 HTML</li>
           <li><code>?download=1</code> 可让图片也变成下载</li>
-          <li>响应带 <code>immutable</code>，同一个链接的内容视为永不变——文件名里有随机前缀，换图必换链接</li>
+          <li>文件名含随机前缀，同一链接的内容不会变，所以标了 <code>immutable</code>——换图必换链接</li>
+          <li><strong style="color:var(--text);">删除不会让链接立刻消失</strong>：原件当场就没，但边缘节点上那份缓存最多还会被命中一小时（<code>max-age=3600</code>），之后回源拿到 404。这个值是实测出来的取舍——曾经打了一年，结果删掉的图能续命一年</li>
         </ul>
       </div>
 
@@ -233,7 +234,7 @@ curl "https://yooy.cc.cd/api/meta?url=https://yooy.cc.cd/i/2026/08/6f20444f3562-
           </span>
         </div>
         <h3>接口说明</h3>
-        <p style="color:var(--muted);margin:0 0 16px;">根据 key 删除图片，key 必须以 <code>images/</code> 开头。</p>
+        <p style="color:var(--muted);margin:0 0 16px;">删除对象。可以用 <code>key</code>，也可以直接粘 <code>/i/</code> 完整链接给 <code>url</code>（实测两种都通）。</p>
 
         <h3>请求参数</h3>
         <table style="margin-bottom:16px;">
@@ -241,19 +242,20 @@ curl "https://yooy.cc.cd/api/meta?url=https://yooy.cc.cd/i/2026/08/6f20444f3562-
             <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>key</code></td><td>string</td><td>是</td><td>图片存储键，格式: images/日期/时间戳-随机-文件名.ext</td></tr>
+            <tr><td><code>key</code></td><td>string</td><td>二选一</td><td>形如 <code>2026/08/6f20444f3562-demo.png</code></td></tr>
+            <tr><td><code>url</code></td><td>string</td><td>二选一</td><td>图片完整链接，服务端会反解出 key</td></tr>
           </tbody>
         </table>
 
         <h3>示例请求</h3>
-        <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=images%2F2026-08-30%2F1725000000000-abc123.png"</code></pre>
+        <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=2026/08/6f20444f3562-demo.png"
+curl -X DELETE "https://yooy.cc.cd/api/delete?url=https%3A%2F%2Fyooy.cc.cd%2Fi%2F2026%2F08%2F6f20444f3562-demo.png"</code></pre>
 
         <h3>响应体</h3>
-        <pre><code>{
-  "ok": true,
-  "message": "Deleted successfully",
-  "key": "images/2026-08-30/1725000000000-abc123.png"
-}</code></pre>
+        <pre><code>{ "ok": true, "key": "2026/08/6f20444f3562-demo.png", "message": "已删除" }</code></pre>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:0;">
+          删除前先查存在性，不存在返回 <code>404 {"ok":false,"error":"文件不存在"}</code>。注意存储方法叫 <code>getMetadata()</code>——这个 SDK 上<strong style="color:var(--text);">没有 <code>head()</code></strong>，早期版本调 <code>store.head()</code> 必定抛异常，被 catch 后当成「文件不存在」，导致删除功能对任何文件都返回 404、一张也删不掉。
+        </p>
       </div>
 
       <!-- Notes -->
@@ -263,11 +265,13 @@ curl "https://yooy.cc.cd/api/meta?url=https://yooy.cc.cd/i/2026/08/6f20444f3562-
           <h3 style="margin:0;color:var(--warning);">注意事项</h3>
         </div>
         <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
-          <li>所有接口均支持跨域 (CORS)，可直接在前端调用</li>
-          <li>单次上传文件大小限制：<strong>10MB</strong></li>
-          <li>支持的图片格式：JPEG、PNG、GIF、WebP、SVG</li>
-          <li>URL 子链会自动保留原始文件扩展名（如 .jpg、.png）</li>
-          <li>删除操作不可撤销，请谨慎操作</li>
+          <li>体积上限：<strong>直传 20MB</strong>（任意格式）· <strong>中转 950KB</strong>（仅图片）</li>
+          <li>中转可接受 png / jpg / jpeg / gif / webp / svg / avif / bmp；GIF 与 SVG 前端不做压缩（会丢动画或栅格化），超限请直接走直传</li>
+          <li>图片链接的 Content-Type 由 <code>/i/</code> 路由按扩展名决定，与存储层记录的值无关——SDK 的 <code>store.set()</code> 并不接受 <code>contentType</code> 参数</li>
+          <li>链接指向 <code>/i/</code> 函数路由，不是静态文件；换图必须换链接，因为响应标了 <code>immutable</code></li>
+          <li>全部接口允许跨域，可被任意前端直接调用（自用，未加鉴权）</li>
+          <li>删除不可撤销</li>
+          <li>存储总量 1GB，单个对象 25MB（平台配额）</li>
         </ul>
       </div>
     </section>

@@ -1,296 +1,138 @@
-# EdgeOne Blob Storage 图床接口说明
+# YOO 图床
 
-本文档说明一个基于 EdgeOne Makers Functions 和 EdgeOne Blob Storage 的图片上传接口，用于在前端上传图片，并返回图片的可访问 URL。
+基于腾讯 EdgeOne Makers（Edge Functions + Blob Storage）的个人图床。前端是三个静态页，后端是两个函数路由。
 
-适用场景：
+线上地址：<https://yooy.cc.cd> · 管理后台：`/upload.html` · API 文档：`/api.html`
 
-- 个人图床
-- 图片管理后台
-- Web 端图片上传
-- 轻量的对象存储访问接口
-
-## 1. 方案概述
-
-整个实现分两层：
-
-1. 前端页面负责选择图片、上传图片、展示图片列表、删除图片
-2. EdgeOne Functions 接口负责接收请求，生成 Blob Storage 的 presigned upload URL，并上传文件
-
-核心依赖：
-
-```bash
-npm install @edgeone/pages-blob
-```
-
-核心代码：
-
-```js
-import { getStore } from '@edgeone/pages-blob';
-```
-
-## 2. 目录结构
+## 目录结构
 
 ```txt
 .
-├── cloud-functions/
-│   └── api/
-│       └── upload.js
 ├── edge-functions/
-│   └── api/
-│       └── upload.js
-├── index.html
-├── api.html
-├── upload.html
-├── script.js
-├── styles.css
-├── package.json
-├── README.md
-└── node_modules/
+│   ├── api/[[default]].js     # /api/*  控制面：签名地址、中转上传、列表、元信息、删除、健康检查
+│   └── i/[[default]].js       # /i/*    图片 serve：把字节从存储读出来吐回给访问者
+├── index.html                 # 首页
+├── upload.html                # 管理后台（上传 / 列表 / 复制 / 删除）
+├── api.html                   # API 文档
+├── script.js                  # 前端逻辑，被上面三个页面共用
+├── styles.css                 # 主题、布局、明暗切换
+├── .well-known/               # 域名校验文件，别删
+└── package.json
 ```
 
-## 3. 功能说明
+只有一个运行时（Edge Functions），没有 `cloud-functions/`。原因见下面「为什么不需要 Cloud Functions」。
 
-本接口支持：
+## 两个必须先理解的事实
 
-- Base64 上传
-- multipart/form-data 上传
-- 原始二进制流上传
-- 图片列表查询
-- 图片删除
-- 图片 URL 返回
+这两条决定了整个设计，跟直觉相反，所以写在最前面。
 
-Fishbone 角度：
+### 1. Blob 存储没有任何公开读取地址
 
-- 上传：用户提交图片，函数接收并写入 Blob Storage
-- 读取：返回图片 URL，用于前端展示或直接访问
-- 删除：通过 key 删除对象
-- 列表：列出当前存储中已有图片
+官方文档原话：
 
-## 4. 运行方式
+> Blob 面向 Makers Functions 的运行时数据需要（如读写、查询、加工），**不建议作为公网图床或 CDN 使用**。
 
-### 4.1 函数入口
+SDK 的全部方法里也没有 `getDownloadUrl` 之类的东西，而 `createUploadUrl` 签出来的地址被绑死成只能 `PUT`，拿来 `GET` 会 403。
 
-建议在 EdgeOne Makers 的 main 分支中放置函数目录：
+**结论**：`https://域名/<key>` 这种链接不可能成立（实测 404）。图片必须由一个函数路由把字节读出来再吐回去。这就是 `/i/` 路由存在的原因，也是你的图片链接的真正形态：
 
 ```txt
-cloud-functions/api/upload.js
+https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png
+                 └key──────────────────────────┘
 ```
 
-也可以放在：
+### 2. Edge 的 1MB 限制只管「进来的」，不管「出去的」
 
-```txt
-edge-functions/api/upload.js
-```
+平台限制表：
 
-### 4.2 环境变量
-
-在 EdgeOne 项目中配置以下变量：
-
-```txt
-GITHUB_TOKEN=xxx
-GITHUB_OWNER=xxx
-GITHUB_REPO=xxx
-GITHUB_BRANCH=main
-```
-
-如果你走纯 Blob Storage 方案，则可以直接使用 EdgeOne 自带存储，而不需要 GitHub 依赖。
-
-## 5. 上传接口
-
-### 接口地址
-
-```txt
-POST /api/upload
-```
-
-### 请求头
-
-```txt
-Content-Type: application/json
-```
-
-或者：
-
-```txt
-Content-Type: multipart/form-data
-```
-
-### 5.1 Base64 上传
-
-```bash
-curl -X POST "https://yooy.cc.cd/api/upload" \
-  -H "Content-Type: application/json" \
-  --data '{
-    "filename":"demo.png",
-    "base64":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB..."
-  }'
-```
-
-### 5.2 FormData 上传
-
-```bash
-curl -X POST "https://yooy.cc.cd/api/upload" \
-  -F "file=@/path/to/image.png"
-```
-
-### 5.3 二进制上传
-
-```bash
-curl -X POST "https://yooy.cc.cd/api/upload" \
-  -H "Content-Type: image/png" \
-  --data-binary @image.png
-```
-
-## 6. 请求参数
-
-### 6.1 JSON 参数
-
-| 参数 | 类型 | 必填 | 说明 |
+| 运行时 | 请求体 | 响应体 | CPU / 执行时长 |
 | --- | --- | --- | --- |
-| filename | string | 否 | 文件名，用于保存文件 |
-| base64 | string | 是 | Base64 图片内容，支持 `data:image/...;base64,...` 格式 |
-| contentType | string | 否 | 图片 MIME 类型 |
+| Edge Functions | 1 MB | **文档未设上限** | 200ms CPU（不含 I/O 等待） |
+| Cloud Functions | 6 MB | **6 MB**（有专属错误码 `500 CLOUD_FUNCTION_RESPONSE_PAYLOAD_TOO_LARGE`） | 默认 30s，最大 120s |
 
-### 6.2 multipart/form-data 参数
+实测：一张 2.6MB 的原图经 `/i/` 返回，**逐字节与原件一致**，耗时 0.85s。
 
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| file | File | 是 | 图片文件 |
-| image | File | 否 | 兼容字段名 |
-| upload | File | 否 | 兼容字段名 |
+**结论**：往外发大图放在 Edge 反而比 Cloud 更宽松——Cloud 有硬性的 6MB 响应上限。所以整个后端只用 Edge Functions，不需要 Cloud Functions，也顺带避开了两个运行时抢同一条 `/api/*` 路由的未定义行为（官方模板自己的做法就是给两个运行时各分一个不重叠的路径前缀）。
 
-## 7. 成功响应
+## 上传：两条路
 
-```json
-{
-  "ok": true,
-  "message": "Image uploaded to EdgeOne Blob Storage",
-  "key": "images/2026-08-29/1724900000000-demo.png",
-  "uploadUrl": "https://.../images/2026-08-29/1724900000000-demo.png?sig=...",
-  "url": "https://.../images/2026-08-29/1724900000000-demo.png"
-}
-```
+文件要进存储，区别只在**字节是否经过边缘函数**。
 
-字段说明：
-
-| 字段 | 类型 | 说明 |
+| | 压缩中转 | 原图直传 |
 | --- | --- | --- |
-| ok | boolean | 请求是否成功 |
-| message | string | 提示信息 |
-| key | string | Blob 唯一 key |
-| uploadUrl | string | 生成的临时上传地址 |
-| url | string | 最终可访问图片地址 |
+| 路径 | `PUT/POST /api/upload` | `POST /api/upload-url` → 客户端 `PUT` |
+| 谁送字节进存储 | 函数 | 浏览器 |
+| 上限 | 950KB | 20MB（存储单值 25MB） |
+| 格式 | 仅图片 | **任意** |
+| 是否压缩 | 超限自动压 | 原图字节，不动 |
+| 典型用途 | 脚本、`curl` 一行传小图 | 网页端传手机原图、HEIC、大图 |
 
-## 8. 错误响应
+直传时字节不路过函数，所以 1MB 那个请求体上限压根不会被触发——这是能传大图的唯一办法。
 
-```json
-{
-  "ok": false,
-  "error": "Missing file field in multipart/form-data"
-}
-```
+### 中转的前端压缩逻辑
 
-常见错误：
+`script.js` 的 `compressToLimit()` 用 canvas 逐步降尺寸和质量，压到 950KB 以下再上传。**GIF 和 SVG 不压**：canvas 会让 GIF 丢动画、让 SVG 变成栅格图，这两种超限时提示改用直传。
 
-- `Only POST is supported`
-- `Missing file field in multipart/form-data`
-- `JSON body must contain base64/data/image/file string`
-- `Unsupported body format. Use multipart/form-data or JSON { base64 }.`
+## 配置
 
-## 9. Blob Storage 相关接口思路
-
-EdgeOne 的 Blob Storage SDK 提供了如下能力：
+改代码里两处即可，两边必须一致：
 
 ```js
-import { getStore } from '@edgeone/pages-blob';
-
-const store = getStore('uploads');
-
-// 写入
-await store.set('a.png', fileBuffer);
-await store.setJSON('meta', { name: 'a.png' });
-
-// 读取
-const data = await store.get('a.png');
-const json = await store.get('meta', { type: 'json' });
-
-// 删除
-await store.delete('a.png');
-
-// 列表
-const { blobs } = await store.list({ prefix: 'images/' });
+const STORE_NAME = 'yoo-images';   // edge-functions/api/[[default]].js
+const STORE_NAME = 'yoo-images';   // edge-functions/i/[[default]].js
 ```
 
-对应到 API 层面，可以扩展这些接口：
+存储桶**不需要预先创建**，`getStore()` 首次写入时自动建（已实测：`/api/health` 对新桶名返回 `storage.ok: true`）。
+
+函数内部 `getStore()` 自动鉴权，**不需要 API token**。只有从 EdgeOne 之外访问存储时才需要 `projectId` + token。
+
+图片域名不写死——serve 与所有返回的链接都用 `new URL(request.url).origin`，所以预览域名下也能得到正确链接。
+
+## API
+
+全部返回 JSON（除 `/i/`），字段含义与 curl 示例见 `/api.html`，那里每条都实测过。
 
 ```txt
-GET /api/list
-DELETE /api/delete?key=images/xxx.png
-GET /api/get?key=images/xxx.png
+POST   /api/upload-url   直传第一步：换取签名 PUT 地址     ≤20MB · 任意格式
+PUT    /api/upload        中转：原始字节（?name=xxx.png）   ≤950KB · 仅图片
+POST   /api/upload        中转：multipart/form-data        ≤950KB · 仅图片
+GET    /i/<key>           图片本体，即你要分享的链接        ?download=1 转为下载
+GET    /api/list          列表（limit / cursor / detail / all）
+GET    /api/meta          单个对象的存储元信息
+GET    /api/health        存储可达性 + 各路径上限
+DELETE /api/delete        删除（?key= 或 ?url=）
 ```
 
-这些接口本质上就是对 store.list、store.delete、store.get 的封装。
+一条命令传图：
 
-## 10. 前端管理页建议
+```bash
+curl -X PUT "https://yooy.cc.cd/api/upload?name=demo.png" \
+  -H "Content-Type: image/png" --data-binary @demo.png
+```
 
-前端页面应当具备：
+## 部署
 
-- 上传图片
-- 选择图片文件
-- 上传后显示图片列表
-- 图片预览
-- 复制 URL
-- 删除图片
-- 重命名/更新文件名
-- 搜索过滤
+推 `main` 到 GitHub，EdgeOne Pages 自动构建。函数依赖由 `package.json` 安装，`node_modules/` 不入库。
 
-这层页面可以直接在浏览器中使用，适合本地开发和测试：
+上线后第一件事打健康检查，能立刻区分「代码没部署上去」和「存储不通」：
 
-- 如果 API 可用，则调用真实接口
-- 如果 API 不可用，则退回到本地模拟列表
+```bash
+curl https://yooy.cc.cd/api/health
+```
 
-这样既能本地调试，也能直接部署到生产环境。
+## 写这个仓库时踩到的坑
 
-## 11. 技术实现说明
+`@edgeone/pages-blob` 的类型定义（`dist/index.d.ts`）是唯一可靠的依据，文档和直觉在这里都会骗人。下面这些全部是实测崩过的：
 
-实际核心流程：
+| 误用 | 真实情况 |
+| --- | --- |
+| `file instanceof File` | Edge 运行时**没有 `File` 全局对象**，直接 `ReferenceError`。改用鸭子类型 `typeof file.arrayBuffer === 'function'` |
+| `store.set(key, new Uint8Array(...))` | `BlobInput` 只接受 `string \| ArrayBuffer \| Blob \| ReadableStream`。要传 `ArrayBuffer` |
+| `store.set(key, buf, { contentType })` | `SetOptions` 里**没有 `contentType`**，被静默丢弃。Content-Type 只能在 serve 路由上决定 |
+| `store.head(key)` | 不存在，真实方法是 `getMetadata()`。这个 bug 会让删除对任何文件都返回 404 |
+| `store.list({ limit, cursor })` | 默认 `paginate: true` 时自动聚合全部页且**不返回 cursor**，分页永远是假的。必须显式 `paginate: false` |
+| 从 `list()` 结果里读 `size` | `BlobInfo` 只有 `{ key, etag }`。要大小只能逐项 `getMetadata()`（即 `?detail=1`） |
+| 用默认句柄查「文件还在不在」 | 默认是最终一致的读（走边缘缓存），实测对象已删除后 `getMetadata()` 仍会返回旧元信息，谎报存在。判存在必须用 `getStore({ name, consistency: 'strong' })` |
+| 给图片响应打 `max-age=31536000, immutable` | 边缘节点会缓存一年，于是**删掉的图还能继续访问一年**。现值 `max-age=3600` + `stale-while-revalidate=86400`，删除一小时内可见效 |
 
-1. 前端提交图片到函数接口
-2. 函数解析 Base64 或 multipart/form-data
-3. 转换成 Buffer
-4. 调用 `getStore()` 建立存储对象
-5. 调用 `createUploadUrl(key, options)` 生成上传地址
-6. 使用 `fetch(uploadUrl, { method: 'PUT', body: fileBuffer })` 写入 Blob
-7. 返回图片 URL
-
-这保证了：
-
-- 文件不会直接暴露到业务逻辑中
-- 上传路径和签名管理由存储层控制
-- 可以在前端直接生成图片链接
-
-## 12. 适用限制
-
-- 适合小规模高频图片使用
-- 适合私有图床或个人站点
-- 不适合超大规模公开存储场景
-
-## 13. 注意事项
-
-- 不要把上传 URL 直接暴露给未授权访问
-- 对 key 做规范化处理，避免非法字符
-- 对图片类型做校验，限制危险文件类型
-- 建议在生产环境中增加鉴权和访问控制
-
-## 14. 结论
-
-EdgeOne Blob Storage 是比较适合这类需求的方案。
-
-其优点在于：
-
-- 免费/低成本
-- 无需自己维护 GitHub token
-- 方便与 EdgeOne Pages / Functions 集成
-- 适合做图片上传和 URL 返回服务
-
-因此，这个项目的目标是：把图片上传接口封装成一个稳定、简洁、可复用的图床 API。
+另有一条平台注意事项：平台的默认预览域名有内容合规限制（预览链接 3 小时过期、大陆访问可能 401），所以这个站点绑了自定义域名。

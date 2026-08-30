@@ -362,7 +362,7 @@ function renderList(items) {
         saveList(up); renderList(up);
         showToast('已设置别名（本地显示）', 'success');
       } else if (act === 'delete') {
-        if (!window.confirm('删除这张图？链接会立即失效。')) return;
+        if (!window.confirm('删除这张图？存储里的原件会立刻消失；由于边缘节点有缓存，旧链接最多还会被人看到一小时，之后变成 404。')) return;
         var orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = ICONS.spinner;

@@ -89,37 +89,37 @@
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
             <i data-lucide="zap" class="icon-md" style="color:var(--brand);"></i>
-            <h3 style="margin:0;">边缘加速</h3>
+            <h3 style="margin:0;">边缘节点出图</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            基于 EdgeOne 边缘网络，图片全球加速访问，低延迟高可用。
+            图片由 EdgeOne 边缘函数吐出，响应缓存 1 小时并可后台续期。实测 2.6MB 原图返回逐字节完整，耗时 0.85 秒。
           </p>
         </div>
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
             <i data-lucide="shield-check" class="icon-md" style="color:var(--success);"></i>
-            <h3 style="margin:0;">安全可靠</h3>
+            <h3 style="margin:0;">无需自建存储</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            文件存储在 EdgeOne Blob Storage，自动 CDN 分发，数据持久可靠。
+            文件存在 EdgeOne Blob Storage，函数内自动鉴权，不需要配置任何 token。配额为总量 1GB、单文件 25MB。
           </p>
         </div>
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
             <i data-lucide="link" class="icon-md" style="color:var(--warning);"></i>
-            <h3 style="margin:0;">URL 子链</h3>
+            <h3 style="margin:0;">链接形态</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            上传时自动保留原始文件扩展名，生成的 URL 直接指向图片文件。
+            形如 <code>/i/2026/08/&lt;随机&gt;-&lt;原名&gt;.png</code>，保留原始文件名便于辨认。注意它是函数路由而非静态文件，换图必须换链接。
           </p>
         </div>
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
             <i data-lucide="layers" class="icon-md" style="color:#a78bfa;"></i>
-            <h3 style="margin:0;">多种上传</h3>
+            <h3 style="margin:0;">两条上传路径</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            支持 multipart/form-data、Base64 JSON、二进制流三种上传方式。
+            原图直传（任意格式，≤20MB，字节不经过函数）与压缩中转（仅图片，≤950KB，一条 curl 就能传）。
           </p>
         </div>
       </div>
@@ -129,22 +129,23 @@
       <h2>快速开始</h2>
       <div class="card" style="margin-top:12px;">
         <h3>Step 1：上传图片</h3>
-        <p style="color:var(--muted);margin:0 0 16px;">拖拽图片到管理后台，或点击选择文件。支持 PNG、JPG、GIF、WebP 格式。</p>
+        <p style="color:var(--muted);margin:0 0 16px;">拖拽文件到管理后台。默认走「原图直传」，任意格式、保留原图；也可切到「压缩中转」，只收图片、超过 950KB 会自动压。</p>
         <a href="./upload.html" class="button primary" style="text-decoration:none;display:inline-flex;">
           <i data-lucide="upload" class="icon-sm"></i>
           去上传
         </a>
       </div>
       <div class="card" style="margin-top:12px;">
-        <h3>Step 2：获取图片 URL</h3>
-        <p style="color:var(--muted);margin:0 0 16px;">上传成功后，点击「查看」在新标签页打开图片，或点击「复制」获取直链 URL。</p>
-        <pre style="margin:0;"><code>https://yooy.cc.cd/images/2026-08-30/1725000000000-abc123-myimage.png</code></pre>
+        <h3>Step 2：获取图片链接</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">上传成功后，点「新标签页打开」预览，或点「复制链接」拿到可直接分享的地址。</p>
+        <pre style="margin:0;"><code>https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png</code></pre>
       </div>
       <div class="card" style="margin-top:12px;">
-        <h3>Step 3：使用 API</h3>
-        <p style="color:var(--muted);margin:0 0 16px;">通过 HTTP API  programmatically 上传图片，返回 JSON 响应包含公开访问 URL。</p>
-        <pre style="margin:0;"><code>curl -X POST "https://yooy.cc.cd/api/upload" \
-  -F "file=@photo.jpg"</code></pre>
+        <h3>Step 3：调用 API</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">用 HTTP 接口上传图片，响应里的 <code>url</code> 就是图片链接。完整接口清单见 API 文档页。</p>
+        <pre style="margin:0;"><code>curl -X PUT "https://yooy.cc.cd/api/upload?name=demo.png" \
+  -H "Content-Type: image/png" \
+  --data-binary @demo.png</code></pre>
       </div>
     </section>
   </main>
