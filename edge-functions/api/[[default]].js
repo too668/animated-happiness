@@ -441,22 +441,6 @@ export async function onRequest(context) {
       }
     }
 
-    // ── POST /api/purge-legacy-keys ───────────────────────────────
-    // 临时路由：清空旧 yoo-keys 桶里的哈希记录（key 已迁往 Redis）。跑一次后即从代码移除。
-    if (request.method === 'POST' && route === 'purge-legacy-keys') {
-      const admin = await authState(context, request);
-      if (!admin.authed) return fail('仅管理员可操作：请先在管理后台登录', 401);
-      const legacy = getStore({ name: 'yoo-keys', consistency: 'strong' });
-      const { blobs } = await legacy.list();
-      for (const blob of blobs || []) await legacy.delete(blob.key);
-      const after = await legacy.list();
-      return json({
-        ok: true,
-        deleted: (blobs || []).length,
-        remaining: (after.blobs || []).length
-      });
-    }
-
     // ── GET /api/list ──────────────────────────────────────────────
     if (request.method === 'GET' && route === 'list') {
       const gate = permGate(await resolveAuth(context, request, url), 'list');
