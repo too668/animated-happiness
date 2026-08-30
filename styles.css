@@ -149,6 +149,23 @@ button, input, select, textarea {
   height: 36px;
   flex-shrink: 0;
 }
+/* 这两个类此前在 HTML 里用了、CSS 里却没定义，
+   没有宽高的 <svg> 会退回默认替换元素尺寸 300×150，页脚因此被撑爆 */
+.brand-logo-small {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.brand-logo-hero {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+/* 标志是单色负形，靠 currentColor 上色 */
+.brand-logo,
+.brand-logo-small,
+.brand-logo-hero { color: var(--brand); }
 
 .nav {
   display: flex;
@@ -398,13 +415,22 @@ footer {
   align-items: center;
   gap: 12px;
 }
-.footer-logo {
-  width: 32px;
-  height: 32px;
+.footer-brand-name {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.footer-brand-tag {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 .footer-links {
   display: flex;
   gap: 16px;
+  flex-wrap: wrap;
 }
 .footer-links a {
   color: var(--muted);
@@ -415,6 +441,22 @@ footer {
   gap: 4px;
 }
 .footer-links a:hover { color: var(--brand); text-decoration: none; }
+.footer-note {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.7;
+}
+.footer-note code {
+  font-size: 0.7rem;
+  padding: 1px 4px;
+}
+@media (max-width: 600px) {
+  .footer-content { flex-direction: column; align-items: flex-start; gap: 14px; }
+}
 
 /* ── Icon sizes ── */
 .icon-xs { width: 12px; height: 12px; }
