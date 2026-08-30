@@ -15,3 +15,9 @@ node_modules/
 
 # Bun cache
 .bun/
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
+  

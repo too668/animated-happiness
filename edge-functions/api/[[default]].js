@@ -9,6 +9,28 @@ const STORE_NAME = 'yoo-images';
 
 const RELAY_MAX_BYTES = 950 * 1024; // Edge 请求体上限 1MB，留出余量
 const DIRECT_MAX_BYTES = 20 * 1024 * 1024; // Blob 单值上限 25MB
+const S3_MAX_BYTES = 5 * 1024 * 1024 * 1024; // S3 上限 5GB
+
+// iDrive e2 S3 配置（HTTP/SigV4）
+const IDRIVE_ENDPOINT = 'https://s3.ap-northeast-1.idrivee2.com';
+const IDRIVE_REGION = 'ap-northeast-1';
+let s3Configured = false;
+const envVarsGlobal = globalThis.env || {};
+
+function envVar(context, name) {
+  const envVars = (context && context.env) || envVarsGlobal;
+  const v = envVars[name];
+  return typeof v === 'string' && v.trim() ? v.trim() : '';
+}
+
+// Check if S3 is configured
+if (envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET')) {
+  const accessKeyId = envVar({ env: envVarsGlobal }, 'IDRIVE_ACCESS_KEY_ID');
+  const secretAccessKey = envVar({ env: envVarsGlobal }, 'IDRIVE_SECRET_ACCESS_KEY');
+  if (accessKeyId && secretAccessKey) {
+    s3Configured = true;
+  }
+}
 const UPLOAD_URL_TTL = 600;
 const LIST_DEFAULT_LIMIT = 100;
 const LIST_MAX_LIMIT = 500;
