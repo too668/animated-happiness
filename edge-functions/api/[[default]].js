@@ -177,6 +177,16 @@ export default async function onRequest(context) {
     let filename = 'upload.png';
     let mimeType = 'image/png';
 
+    // Helper: Convert base64 string to Uint8Array (Web API compatible)
+    const base64ToUint8Array = (base64) => {
+      const binaryString = atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return bytes;
+    };
+
     // 1. multipart/form-data
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
@@ -202,7 +212,7 @@ export default async function onRequest(context) {
         }, 400);
       }
 
-      fileBuffer = Buffer.from(await file.arrayBuffer());
+      fileBuffer = new Uint8Array(await file.arrayBuffer());
       filename = file.name || `upload-${Date.now()}.png`;
       mimeType = file.type || 'image/png';
     }
@@ -236,7 +246,7 @@ export default async function onRequest(context) {
         return json({ ok: false, error: 'Base64 data too large' }, 400);
       }
 
-      fileBuffer = Buffer.from(clean, 'base64');
+      fileBuffer = base64ToUint8Array(clean);
       filename = body.filename || body.name || `upload-${Date.now()}${getFileExtension('', mimeType)}`;
       mimeType = body.contentType || mimeType;
     }
@@ -247,14 +257,14 @@ export default async function onRequest(context) {
       
       // Try to decode as base64 first
       if (/^[A-Za-z0-9+/=\s]+$/.test(trimmed) && trimmed.length > 0) {
-        fileBuffer = Buffer.from(trimmed.replace(/\s+/g, ''), 'base64');
+        fileBuffer = base64ToUint8Array(trimmed.replace(/\s+/g, ''));
       } else {
         // Treat as raw binary
-        fileBuffer = Buffer.from(text);
+        fileBuffer = new TextEncoder().encode(text);
       }
 
       // Validate size
-      if (fileBuffer.length > CONFIG.MAX_FILE_SIZE) {
+      if (fileBuffer.byteLength > CONFIG.MAX_FILE_SIZE) {
         return json({ ok: false, error: 'File too large' }, 400);
       }
 
@@ -293,7 +303,7 @@ export default async function onRequest(context) {
       ok: true,
       key,
       url: `${CONFIG.BASE_URL}/${key}`,
-      size: fileBuffer.length,
+      size: fileBuffer.byteLength,
       contentType: mimeType,
       filename: sanitizeFilename(filename)
     }, 200);
