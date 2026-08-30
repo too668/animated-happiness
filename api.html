@@ -84,7 +84,7 @@
           <span class="badge warning"><span>数据接口已启用鉴权</span></span>
         </div>
         <p style="color:var(--muted);line-height:1.9;margin-bottom:10px;">
-          上传 / 列表 / 删除等数据接口认两种凭证：<strong style="color:var(--text);">管理后台登录后的 Cookie</strong>（全部权限），或<strong style="color:var(--text);">管理后台「API Keys」卡片签发的密钥</strong>（按权限放行）。密钥明文只在创建时显示一次，服务端仅保存哈希；改权限与吊销立即生效。
+          上传 / 列表 / 删除等数据接口认两种凭证：<strong style="color:var(--text);">管理后台登录后的 Cookie</strong>（全部权限），或<strong style="color:var(--text);">管理后台「API Keys」卡片签发的密钥</strong>（按权限放行）。密钥明文只在创建时显示一次，服务端仅保存哈希（存独立 Redis，与图片桶隔离）；改权限与吊销立即生效。
         </p>
         <h3>携带密钥的两种方式</h3>
         <pre><code>curl -H "Authorization: Bearer yoo_xxxxxxxxxxxxxxxxxxxxxxxx" "https://yooy.cc.cd/api/list"

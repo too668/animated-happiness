@@ -345,7 +345,7 @@
         <span class="badge info"><span>脚本 / 外部接入</span></span>
       </div>
       <p class="muted" style="font-size:0.85rem;margin-bottom:14px;line-height:1.7;">
-        给脚本或外部程序签发带权限的密钥（上传 / 列表 / 删除）。密钥明文只在创建时显示一次；服务端只保存它的哈希——哈希存在独立的存储桶 <code>yoo-keys</code> 里，自动创建，不需要任何额外配置。改动立即生效。
+        给脚本或外部程序签发带权限的密钥（上传 / 列表 / 删除）。密钥明文只在创建时显示一次；服务端只保存它的哈希——哈希存在独立的 Redis 里（与图片桶隔离），改动立即生效。
       </p>
 
       <div id="keySecretBox" style="display:none;border:1px solid var(--warning);background:var(--warning-light);border-radius:8px;padding:12px 14px;margin-bottom:14px;">

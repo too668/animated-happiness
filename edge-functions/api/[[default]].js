@@ -1,4 +1,4 @@
-import { getStore, PreconditionFailedError } from '@edgeone/pages-blob';
+import { getStore } from '@edgeone/pages-blob';
 
 // EdgeOne Makers 图床 —— 控制面（路由 /api/*）
 //
@@ -49,9 +49,7 @@ const AUTH_COOKIE = 'yoo_auth';
 const AUTH_MAX_AGE = 7 * 24 * 3600;
 
 function envPassword(context) {
-  const envVars = (context && context.env) || globalThis.env || {};
-  const v = envVars.ADMIN_PASSWORD;
-  return typeof v === 'string' && v.trim() ? v : '';
+  return envVar(context, 'ADMIN_PASSWORD');
 }
 
 async function sha256Hex(input) {
@@ -86,15 +84,38 @@ const authCookie = (token, maxAge) =>
   `${AUTH_COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax; Secure`;
 
 // ── API key ─────────────────────────────────────────────────
-// 记录存在独立 store：control.list() 列的是整个 yoo-images，key 记录绝不能混进去，
-// 否则会顺着 /api/list 泄给所有持有 list 权限的人。
-// blob key = 'k/' + sha256('yoo-key:'+secret)：拿到密钥一次 get() 就能定位，无需扫描。
-// 强一致句柄是「吊销立即生效」的前提；最终一致读可能让已删的 key 继续通过验证。
-const KEY_STORE_NAME = 'yoo-keys';
-const KEY_PREFIX = 'k/';
+// 记录存 Upstash Redis（环境变量 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN），
+// 与图片桶完全隔离：平台凭证哪怕泄露，key 记录也不会跟着漏。
+// 库里只有 secret 的 sha256 哈希，明文只在创建时返回一次。
+// redis key = 'yookey:' + sha256('yoo-key:'+secret)：拿到密钥一次 GET 就能定位，无需扫描；
+// 'yookeys:index'（SET）维护记录全集，供面板列表。Redis 强一致，吊销立即生效。
+const KEY_PREFIX = 'yookey:';
+const KEY_INDEX = 'yookeys:index';
 const VALID_PERMS = ['upload', 'list', 'delete'];
 const KEY_RE_SECRET = /^yoo_[0-9a-f]{24}$/i;
-const keyStore = getStore({ name: KEY_STORE_NAME, consistency: 'strong' });
+
+function envVar(context, name) {
+  const envVars = (context && context.env) || globalThis.env || {};
+  const v = envVars[name];
+  return typeof v === 'string' && v.trim() ? v.trim() : '';
+}
+
+// Upstash REST：POST 命令数组，响应里取 result 字段
+async function redis(context, cmd) {
+  const url = envVar(context, 'UPSTASH_REDIS_REST_URL');
+  const token = envVar(context, 'UPSTASH_REDIS_REST_TOKEN');
+  if (!url || !token) {
+    throw new Error('Redis 未配置：缺环境变量 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN');
+  }
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmd)
+  });
+  const data = await r.json();
+  if (data && data.error) throw new Error('Redis: ' + data.error);
+  return data ? data.result : null;
+}
 
 const keyHashFor = (secret) => sha256Hex('yoo-key:' + secret);
 
@@ -130,7 +151,8 @@ async function resolveAuth(context, request, url) {
   if (!secret) return { role: null, perms: [] };
   let record = null;
   try {
-    record = await keyStore.get(KEY_PREFIX + (await keyHashFor(secret)), { type: 'json' });
+    const raw = await redis(context, ['GET', KEY_PREFIX + (await keyHashFor(secret))]);
+    record = raw ? JSON.parse(raw) : null;
   } catch { /* 存储异常按未授权处理 */ }
   if (!record) return { role: null, perms: [] };
   return { role: 'key', perms: normalizePerms(record.perms) || [], id: record.id };
@@ -142,6 +164,21 @@ function permGate(auth, perm) {
   }
   if (!auth.perms.includes(perm)) {
     return fail(`当前 API key 没有 ${perm} 权限`, 403);
+  }
+  return null;
+}
+
+// 面板按 id 改/吊销：索引 + MGET 定位记录
+async function findKeyRecord(context, id) {
+  const hashes = (await redis(context, ['SMEMBERS', KEY_INDEX])) || [];
+  if (!hashes.length) return null;
+  const recs = (await redis(context, ['MGET', ...hashes])) || [];
+  for (let i = 0; i < hashes.length; i++) {
+    if (!recs[i]) continue;
+    try {
+      const rec = JSON.parse(recs[i]);
+      if (rec && rec.id === id) return { rkey: hashes[i], rec };
+    } catch { /* 单条坏数据跳过 */ }
   }
   return null;
 }
@@ -280,10 +317,17 @@ export async function onRequest(context) {
       } catch (e) {
         probe = { ok: false, error: e.message };
       }
+      let keysProbe;
+      try {
+        keysProbe = { ok: (await redis(context, ['PING'])) === 'PONG', backend: 'upstash-redis' };
+      } catch (e) {
+        keysProbe = { ok: false, backend: 'upstash-redis', error: e.message };
+      }
       return json({
         ok: true,
         store: STORE_NAME,
         storage: probe,
+        keys: keysProbe,
         limits: {
           relayMaxBytes: RELAY_MAX_BYTES,
           directMaxBytes: DIRECT_MAX_BYTES,
@@ -298,23 +342,27 @@ export async function onRequest(context) {
       const admin = await authState(context, request);
       if (!admin.authed) return fail('仅管理员可操作：请先在管理后台登录', 401);
 
-      // GET —— 列表。BlobInfo 只有 key/etag，记录体逐个 get 出来
+      // GET —— 列表：索引集合拿全部 redis key，一次 MGET 取记录
       if (request.method === 'GET') {
-        const { blobs } = await keyStore.list({ prefix: KEY_PREFIX });
+        const hashes = (await redis(context, ['SMEMBERS', KEY_INDEX])) || [];
         const keys = [];
-        for (const blob of blobs || []) {
-          try {
-            const rec = await keyStore.get(blob.key, { type: 'json' });
-            if (rec && rec.id) {
-              keys.push({
-                id: rec.id,
-                name: rec.name || '',
-                prefix: rec.prefix || 'yoo_',
-                perms: normalizePerms(rec.perms) || [],
-                createdAt: rec.createdAt || null
-              });
-            }
-          } catch { /* 单条坏数据跳过 */ }
+        if (hashes.length) {
+          const recs = (await redis(context, ['MGET', ...hashes])) || [];
+          for (const raw of recs) {
+            if (!raw) continue;
+            try {
+              const rec = JSON.parse(raw);
+              if (rec && rec.id) {
+                keys.push({
+                  id: rec.id,
+                  name: rec.name || '',
+                  prefix: rec.prefix || 'yoo_',
+                  perms: normalizePerms(rec.perms) || [],
+                  createdAt: rec.createdAt || null
+                });
+              }
+            } catch { /* 单条坏数据跳过 */ }
+          }
         }
         keys.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         return json({ ok: true, keys }, 200, { 'Cache-Control': 'no-store' });
@@ -341,15 +389,16 @@ export async function onRequest(context) {
             createdAt: Date.now(),
             prefix: secret.slice(0, 8) // 供面板展示 yoo_xxxx····
           };
-          try {
-            await keyStore.setJSON(KEY_PREFIX + (await keyHashFor(secret)), record, { onlyIfNew: true });
+          // NX：极小概率撞键时返回 null，换个密钥再来
+          const rkey = KEY_PREFIX + (await keyHashFor(secret));
+          const set = await redis(context, ['SET', rkey, JSON.stringify(record), 'NX']);
+          if (set) {
+            await redis(context, ['SADD', KEY_INDEX, rkey]);
             return json(
               { ok: true, id: record.id, name, perms, secret, createdAt: record.createdAt },
               200,
               { 'Cache-Control': 'no-store' }
             );
-          } catch (e) {
-            if (!(e instanceof PreconditionFailedError)) throw e; // 极小概率撞键，换个密钥再来
           }
         }
         return fail('密钥创建失败，请重试', 500);
@@ -365,36 +414,30 @@ export async function onRequest(context) {
         }
         const id = String(body.id || '');
         if (!id) return fail('缺少参数 id');
-        const { blobs } = await keyStore.list({ prefix: KEY_PREFIX });
-        for (const blob of blobs || []) {
-          const rec = await keyStore.get(blob.key, { type: 'json' });
-          if (!rec || rec.id !== id) continue;
-          if (body.perms !== undefined) {
-            const perms = normalizePerms(body.perms);
-            if (!perms || !perms.length) return fail('权限至少选择一项（upload / list / delete）');
-            rec.perms = perms;
-          }
-          if (body.name !== undefined) {
-            rec.name = String(body.name || '').trim().slice(0, 40) || '未命名';
-          }
-          await keyStore.setJSON(blob.key, rec);
-          return json({ ok: true, id: rec.id, name: rec.name, perms: rec.perms });
+        const found = await findKeyRecord(context, id);
+        if (!found) return fail('API key 不存在', 404);
+        const rec = found.rec;
+        if (body.perms !== undefined) {
+          const perms = normalizePerms(body.perms);
+          if (!perms || !perms.length) return fail('权限至少选择一项（upload / list / delete）');
+          rec.perms = perms;
         }
-        return fail('API key 不存在', 404);
+        if (body.name !== undefined) {
+          rec.name = String(body.name || '').trim().slice(0, 40) || '未命名';
+        }
+        await redis(context, ['SET', found.rkey, JSON.stringify(rec)]);
+        return json({ ok: true, id: rec.id, name: rec.name, perms: rec.perms });
       }
 
       // DELETE ?id= —— 吊销
       if (request.method === 'DELETE') {
         const id = url.searchParams.get('id') || '';
         if (!id) return fail('缺少参数 id');
-        const { blobs } = await keyStore.list({ prefix: KEY_PREFIX });
-        for (const blob of blobs || []) {
-          const rec = await keyStore.get(blob.key, { type: 'json' });
-          if (!rec || rec.id !== id) continue;
-          await keyStore.delete(blob.key);
-          return json({ ok: true, id, message: '已吊销' });
-        }
-        return fail('API key 不存在', 404);
+        const found = await findKeyRecord(context, id);
+        if (!found) return fail('API key 不存在', 404);
+        await redis(context, ['DEL', found.rkey]);
+        await redis(context, ['SREM', KEY_INDEX, found.rkey]);
+        return json({ ok: true, id, message: '已吊销' });
       }
     }
 

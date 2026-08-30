@@ -81,7 +81,7 @@ const STORE_NAME = 'yoo-images';   // edge-functions/api/[[default]].js
 const STORE_NAME = 'yoo-images';   // edge-functions/i/[[default]].js
 ```
 
-API key 记录存在第二个桶 `yoo-keys`（强一致句柄，吊销立即生效），同样首写自动建；记录只存 sha256 哈希，密钥明文不落库。
+API key 记录存 **Upstash Redis**（环境变量 `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`，EdgeOne 控制台配置），与图片桶完全隔离；记录只存 sha256 哈希，密钥明文不落库，吊销立即生效。`/api/health` 的 `keys.ok` 报告 Redis 连通性。
 
 存储桶**不需要预先创建**，`getStore()` 首次写入时自动建（已实测：`/api/health` 对新桶名返回 `storage.ok: true`）。
 
