@@ -1,254 +1,181 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>YOO · API 文档</title>
-    <meta name="description" content="基于 EdgeOne Blob Storage 的图片上传与管理 API，支持 Base64、multipart/form-data 上传，返回公开访问 URL。" />
-    <link rel="stylesheet" href="./styles.css" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="topbar-inner">
-        <div class="brand">
-          <svg class="brand-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="40" height="40" rx="10" fill="url(#brand-gradient)"/>
-            <path d="M12 28V12L20 20L28 12V28" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-            <defs>
-              <linearGradient id="brand-gradient" x1="0" y1="0" x2="40" y2="40">
-                <stop stop-color="#409EFF"/>
-                <stop offset="1" stop-color="#00C6FB"/>
-              </linearGradient>
-            </defs>
-          </svg>
-          <span class="brand-text">YOO</span>
-          <span class="badge success">
-            <i data-lucide="check-circle" class="icon-xs"></i>
-            <span>在线</span>
-          </span>
-        </div>
-        <nav class="nav">
-          <a href="#overview" class="active">
-            <i data-lucide="layout-dashboard" class="icon-sm"></i>
-            <span>概览</span>
-          </a>
-          <a href="#api">
-            <i data-lucide="book-open" class="icon-sm"></i>
-            <span>接口文档</span>
-          </a>
-          <a href="#examples">
-            <i data-lucide="code" class="icon-sm"></i>
-            <span>代码示例</span>
-          </a>
-          <a href="./upload.html">
-            <i data-lucide="settings" class="icon-sm"></i>
-            <span>管理后台</span>
-          </a>
-          <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
-            <i data-lucide="moon" class="icon-moon icon-md"></i>
-            <i data-lucide="sun" class="icon-sun icon-md"></i>
-          </button>
-        </nav>
-      </div>
-    </header>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOO · 首页</title>
+  <meta name="description" content="YOO 图片托管服务 - 基于 EdgeOne Blob Storage 的轻量级图片上传 API" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="./index.html" class="brand" style="text-decoration:none;">
+        <svg class="brand-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="40" height="40" rx="10" fill="url(#brand-gradient)"/>
+          <path d="M12 28V12L20 20L28 12V28" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="brand-gradient" x1="0" y1="0" x2="40" y2="40">
+              <stop stop-color="#409EFF"/>
+              <stop offset="1" stop-color="#00C6FB"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="brand-text">YOO</span>
+        <span class="badge success">
+          <i data-lucide="check-circle" class="icon-xs"></i>
+          <span>在线</span>
+        </span>
+      </a>
+      <nav class="nav">
+        <a href="./index.html" class="active">
+          <i data-lucide="home" class="icon-sm"></i>
+          <span>主页</span>
+        </a>
+        <a href="./api.html">
+          <i data-lucide="book-open" class="icon-sm"></i>
+          <span>API 文档</span>
+        </a>
+        <a href="./upload.html">
+          <i data-lucide="settings" class="icon-sm"></i>
+          <span>管理后台</span>
+        </a>
+        <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
+          <i data-lucide="moon" class="icon-moon icon-md"></i>
+          <i data-lucide="sun" class="icon-sun icon-md"></i>
+        </button>
+      </nav>
+    </div>
+  </header>
 
-    <main class="container">
-      <!-- Hero -->
-      <section id="overview" class="section">
-        <h1>YOO API</h1>
-        <p class="lead">
+  <main class="container">
+    <section class="section">
+      <div style="text-align:center;padding:40px 0 20px;">
+        <svg class="brand-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:72px;height:72px;margin-bottom:20px;">
+          <rect width="40" height="40" rx="10" fill="url(#brand-gradient-hero)"/>
+          <path d="M12 28V12L20 20L28 12V28" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="brand-gradient-hero" x1="0" y1="0" x2="40" y2="40">
+              <stop stop-color="#409EFF"/>
+              <stop offset="1" stop-color="#00C6FB"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <h1 style="margin-bottom:12px;">YOO 图片托管</h1>
+        <p class="lead" style="margin:0 auto 28px;max-width:520px;">
           基于 EdgeOne Makers + Blob Storage 构建的轻量级图片托管服务。<br>
-          支持 Base64、multipart/form-data、二进制流上传，返回可直接访问的公开 URL。
+          支持拖拽上传、批量管理、一键复制，返回可直链访问的公开 URL。
         </p>
-
-        <div class="stats">
-          <div class="stat">
-            <div class="stat-value">Fast</div>
-            <div class="stat-label">EdgeOne 边缘网络</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">CORS</div>
-            <div class="stat-label">全接口支持跨域</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">3 种</div>
-            <div class="stat-label">上传方式</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value">∞</div>
-            <div class="stat-label">容量无上限</div>
-          </div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+          <a href="./upload.html" class="button primary" style="text-decoration:none;">
+            <i data-lucide="upload-cloud" class="icon-sm"></i>
+            进入管理后台
+          </a>
+          <a href="./api.html" class="button secondary" style="text-decoration:none;">
+            <i data-lucide="book-open" class="icon-sm"></i>
+            查看 API 文档
+          </a>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <!-- API Reference -->
-      <section id="api" class="section">
-        <h2>接口文档</h2>
-
-        <div class="card" style="margin-bottom: 18px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-            <code style="background:rgba(45,212,191,0.12);color:#5eead4;border-color:rgba(45,212,191,0.25);">POST</code>
-            <code>/api/upload</code>
-            <span class="badge">上传接口</span>
-          </div>
-          <p style="margin:0 0 14px;color:var(--muted);">上传图片到 EdgeOne Blob Storage，返回公开访问 URL。</p>
-          
-          <h3>请求参数</h3>
-          <table>
-            <thead>
-              <tr><th>字段</th><th>类型</th><th>说明</th></tr>
-            </thead>
-            <tbody>
-              <tr><td><code>filename</code></td><td>string</td><td>可选，保存的文件名</td></tr>
-              <tr><td><code>base64</code></td><td>string</td><td>Base64 编码的图片数据（含 data URI 前缀）</td></tr>
-              <tr><td><code>contentType</code></td><td>string</td><td>图片 MIME 类型，如 image/png</td></tr>
-              <tr><td><code>file</code></td><td>File</td><td>multipart/form-data 文件字段</td></tr>
-            </tbody>
-          </table>
-
-          <h3 style="margin-top:18px;">请求示例</h3>
-          <pre><code>// JSON + Base64
-curl -X POST "https://yooy.cc.cd/api/upload" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "filename": "demo.png",
-    "base64": "data:image/png;base64,iVBORw0KGgo..."
-  }'
-
-// multipart/form-data
-curl -X POST "https://yooy.cc.cd/api/upload" \
-  -F "file=@image.png"</code></pre>
-
-          <h3 style="margin-top:18px;">响应体</h3>
-          <pre><code>{
-  "ok": true,
-  "message": "Image uploaded to EdgeOne Blob Storage",
-  "key": "images/2026-08-29/1724900000000-demo.png",
-  "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-demo.png"
-}</code></pre>
-        </div>
-
-        <div class="card" style="margin-bottom: 18px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-            <code style="background:rgba(78,161,255,0.12);color:#93c5fd;border-color:rgba(78,161,255,0.25);">GET</code>
-            <code>/api/list</code>
-            <span class="badge">列表接口</span>
-          </div>
-          <p style="margin:0 0 14px;color:var(--muted);">列出当前存储中的所有图片对象。</p>
-          <pre><code>// 响应体
-{
-  "ok": true,
-  "items": [
-    {
-      "key": "images/2026-08-29/1724900000000-demo.png",
-      "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-demo.png",
-      "size": 102400,
-      "contentType": "image/png",
-      "uploadedAt": "2026-08-29T12:00:00.000Z"
-    }
-  ]
-}</code></pre>
-        </div>
-
+    <section class="section">
+      <h2>功能特性</h2>
+      <div class="two-col">
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-            <code style="background:rgba(251,113,133,0.12);color:#fda4af;border-color:rgba(251,113,133,0.25);">DELETE</code>
-            <code>/api/delete?key=images/xxx.png</code>
-            <span class="badge danger">删除接口</span>
+            <i data-lucide="zap" class="icon-md" style="color:var(--brand);"></i>
+            <h3 style="margin:0;">边缘加速</h3>
           </div>
-          <p style="margin:0 0 14px;color:var(--muted);">根据 key 删除指定图片对象。</p>
-          <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=images/2026-08-29/1724900000000-demo.png"</code></pre>
-          <pre style="margin-top:12px;"><code>{
-  "ok": true,
-  "message": "Image deleted successfully"
-}</code></pre>
+          <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
+            基于 Cloudflare EdgeOne 边缘网络，图片全球加速访问，低延迟高可用。
+          </p>
         </div>
-      </section>
-
-      <!-- Examples -->
-      <section id="examples" class="section">
-        <h2>代码示例</h2>
-
-        <div class="two-col">
-          <div class="card">
-            <h3>JavaScript (Fetch)</h3>
-            <pre><code>const file = document
-  .querySelector('#upload')
-  .files[0];
-
-const formData = new FormData();
-formData.append('file', file);
-
-const res = await fetch(
-  'https://yooy.cc.cd/api/upload',
-  { method: 'POST', body: formData }
-);
-
-const result = await res.json();
-if (result.ok) {
-  console.log(result.url);
-}</code></pre>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <i data-lucide="shield-check" class="icon-md" style="color:var(--success);"></i>
+            <h3 style="margin:0;">安全可靠</h3>
           </div>
-
-          <div class="card">
-            <h3>Python 示例</h3>
-            <pre><code>import requests
-
-url = "https://yooy.cc.cd/api/upload"
-with open("image.png", "rb") as f:
-    r = requests.post(url, files={"file": f})
-
-print(r.json()["url"])</code></pre>
+          <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
+            严格文件大小与类型校验，CORS 全接口支持，防恶意上传。
+          </p>
+        </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <i data-lucide="link" class="icon-md" style="color:var(--warning);"></i>
+            <h3 style="margin:0;">直链访问</h3>
           </div>
+          <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
+            上传后直接返回可访问的公开 URL，支持子链保留原始扩展名，直接嵌入网页。
+          </p>
         </div>
-
-        <div class="card" style="margin-top:18px;">
-          <h3>AI / 自动化工具调用</h3>
-          <pre><code>POST https://yooy.cc.cd/api/upload
-Content-Type: multipart/form-data
-
-file=@image.png</code></pre>
-          <p class="meta">该接口适合 AI 代理、脚本、CI/CD 流水线等场景直接调用。</p>
-        </div>
-      </section>
-    </main>
-
-    <footer>
-      <div class="footer-content">
-        <div class="footer-brand">
-          <svg class="brand-logo-small" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="32" height="32" rx="8" fill="url(#brand-gradient-small)"/>
-            <path d="M10 22V14L16 18L22 14V22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <defs>
-              <linearGradient id="brand-gradient-small" x1="0" y1="0" x2="32" y2="32">
-                <stop stop-color="#409EFF"/>
-                <stop offset="1" stop-color="#00C6FB"/>
-              </linearGradient>
-            </defs>
-          </svg>
-          <div>
-            <div style="font-weight:600;color:var(--text);margin-bottom:4px;">YOO · 基于 EdgeOne Makers</div>
-            <div style="font-size:0.75rem;color:var(--muted);">图片托管 · 边缘加速 · 简单易用</div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <i data-lucide="layers" class="icon-md" style="color:#a78bfa;"></i>
+            <h3 style="margin:0;">多种上传</h3>
           </div>
-        </div>
-        <div class="footer-links">
-          <a href="#overview"><i data-lucide="layout-dashboard" class="icon-xs"></i> 概览</a>
-          <a href="#api"><i data-lucide="book-open" class="icon-xs"></i> API</a>
-          <a href="#examples"><i data-lucide="code" class="icon-xs"></i> 示例</a>
-          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+          <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
+            支持 multipart/form-data、JSON Base64、纯二进制流三种上传方式，灵活适配各类场景。
+          </p>
         </div>
       </div>
-    </footer>
-    <script>
-      // Initialize Lucide icons after DOM load
-      if (window.lucide) {
-        lucide.createIcons();
-      }
-    </script>
-  </body>
+    </section>
+
+    <section class="section">
+      <h2>服务状态</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-value">EdgeOne</div>
+          <div class="stat-label">边缘网络</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">CORS</div>
+          <div class="stat-label">全接口跨域</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">10MB</div>
+          <div class="stat-label">单文件上限</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">∞</div>
+          <div class="stat-label">容量无上限</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-content">
+      <div class="footer-brand">
+        <svg class="brand-logo-small" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="32" height="32" rx="8" fill="url(#brand-gradient-f)"/>
+          <path d="M10 22V14L16 18L22 14V22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="brand-gradient-f" x1="0" y1="0" x2="32" y2="32">
+              <stop stop-color="#409EFF"/>
+              <stop offset="1" stop-color="#00C6FB"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div>
+          <div style="font-weight:600;color:var(--text);margin-bottom:4px;">YOO · 图片托管</div>
+          <div style="font-size:0.75rem;color:var(--muted);">安全 · 快速 · 可靠</div>
+        </div>
+      </div>
+      <div class="footer-links">
+        <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
+        <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
+        <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+      </div>
+    </div>
+  </footer>
+
+  <div id="toastContainer" class="toast-container"></div>
+  <script src="./script.js"></script>
+  <script>if (window.lucide) lucide.createIcons();</script>
+</body>
 </html>

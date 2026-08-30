@@ -1,140 +1,202 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>YOO · API 文档</title>
-    <meta name="description" content="YOY 完整 API 文档，包含上传、列表、删除接口说明与示例。" />
-    <link rel="stylesheet" href="./styles.css" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="topbar-inner">
-        <div class="brand">
-          <span class="brand-mark">Y</span>
-          <span>YOO</span>
-          <span class="badge success">● 在线</span>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOO · API 文档</title>
+  <meta name="description" content="YOO 完整 API 文档，包含上传、列表、删除接口说明与示例。" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="./index.html" class="brand" style="text-decoration:none;">
+        <svg class="brand-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="40" height="40" rx="10" fill="url(#brand-gradient)"/>
+          <path d="M12 28V12L20 20L28 12V28" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="brand-gradient" x1="0" y1="0" x2="40" y2="40">
+              <stop stop-color="#409EFF"/>
+              <stop offset="1" stop-color="#00C6FB"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="brand-text">YOO</span>
+        <span class="badge success">
+          <i data-lucide="check-circle" class="icon-xs"></i>
+          <span>在线</span>
+        </span>
+      </a>
+      <nav class="nav">
+        <a href="./index.html">
+          <i data-lucide="home" class="icon-sm"></i>
+          <span>主页</span>
+        </a>
+        <a href="./api.html" class="active">
+          <i data-lucide="book-open" class="icon-sm"></i>
+          <span>API 文档</span>
+        </a>
+        <a href="./upload.html">
+          <i data-lucide="settings" class="icon-sm"></i>
+          <span>管理后台</span>
+        </a>
+        <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
+          <i data-lucide="moon" class="icon-moon icon-md"></i>
+          <i data-lucide="sun" class="icon-sun icon-md"></i>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="section" style="padding-top:16px;">
+      <h1 style="margin-bottom:8px;">API 文档</h1>
+      <p class="lead" style="margin-bottom:28px;">YOO 提供完整的图片托管 REST API，支持上传图片、查询列表、删除对象。</p>
+
+      <!-- Upload Endpoint -->
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <code style="background:rgba(45,212,191,0.12);color:#5eead4;border-color:rgba(45,212,191,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">POST</code>
+          <code style="font-size:1rem;">/api/upload</code>
+          <span class="badge success">
+            <i data-lucide="upload" class="icon-xs"></i>
+            <span>核心接口</span>
+          </span>
         </div>
-        <nav class="nav">
-          <a href="./index.html">主页</a>
-          <a href="./api.html" class="active">API 文档</a>
-          <a href="./upload.html">管理后台</a>
-          <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
-            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-          </button>
-        </nav>
-      </div>
-    </header>
+        <h3>接口说明</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">上传图片到 EdgeOne Blob Storage，返回公开访问 URL。支持三种上传方式，自动保留原始文件扩展名。</p>
 
-    <main class="container">
-      <section class="section" style="padding-top:16px;">
-        <h1>API 文档</h1>
-        <p class="lead">YOO 提供完整的图片托管 REST API，支持上传图片、查询列表、删除对象。</p>
-
-        <!-- Upload Endpoint -->
-        <div class="card" style="margin-bottom:20px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-            <code style="background:rgba(45,212,191,0.12);color:#5eead4;border-color:rgba(45,212,191,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">POST</code>
-            <code style="font-size:1rem;">/api/upload</code>
-            <span class="badge">核心接口</span>
-          </div>
-
-          <h3>接口说明</h3>
-          <p style="color:var(--muted);margin:0 0 16px;">上传图片到 EdgeOne Blob Storage，返回公开访问 URL。支持三种上传方式。</p>
-
-          <h3>上传方式一：multipart/form-data</h3>
-          <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
+        <h3>上传方式一：multipart/form-data</h3>
+        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
   -F "file=@/path/to/image.png"</code></pre>
 
-          <h3>上传方式二：JSON + Base64</h3>
-          <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
+        <h3>上传方式二：JSON + Base64</h3>
+        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
   -H "Content-Type: application/json" \
   -d '{
     "filename": "demo.png",
     "base64": "data:image/png;base64,iVBORw0KGgo..."
   }'</code></pre>
 
-          <h3>上传方式三：纯二进制流</h3>
-          <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
+        <h3>上传方式三：纯二进制流</h3>
+        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
   -H "Content-Type: image/png" \
   --data-binary @image.png</code></pre>
 
-          <h3 style="margin-top:20px;">响应体</h3>
-          <pre><code>{
+        <h3 style="margin-top:20px;">响应体</h3>
+        <pre><code>{
   "ok": true,
   "message": "Image uploaded to EdgeOne Blob Storage",
-  "key": "images/2026-08-29/1724900000000-demo.png",
-  "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-demo.png"
+  "key": "images/2026-08-29/1724900000000-abc123-demo.png",
+  "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-abc123-demo.png"
 }</code></pre>
+      </div>
+
+      <!-- List Endpoint -->
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <code style="background:rgba(78,161,255,0.12);color:#93c5fd;border-color:rgba(78,161,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
+          <code style="font-size:1rem;">/api/list</code>
+          <span class="badge">
+            <i data-lucide="list" class="icon-xs"></i>
+            <span>列表接口</span>
+          </span>
         </div>
+        <p style="color:var(--muted);margin:0 0 16px;">获取当前存储中所有图片对象列表，支持分页查询。</p>
+        <pre><code>curl "https://yooy.cc.cd/api/list"
+# 分页: curl "https://yooy.cc.cd/api/list?limit=20&cursor=xxx"</code></pre>
 
-        <!-- List Endpoint -->
-        <div class="card" style="margin-bottom:20px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-            <code style="background:rgba(78,161,255,0.12);color:#93c5fd;border-color:rgba(78,161,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
-            <code style="font-size:1rem;">/api/list</code>
-            <span class="badge">列表接口</span>
-          </div>
-
-          <p style="color:var(--muted);margin:0 0 16px;">获取当前存储中所有图片对象列表。</p>
-
-          <pre><code>curl "https://yooy.cc.cd/api/list"</code></pre>
-
-          <h3 style="margin-top:16px;">响应体</h3>
-          <pre><code>{
+        <h3 style="margin-top:16px;">响应体</h3>
+        <pre><code>{
   "ok": true,
   "items": [
     {
-      "key": "images/2026-08-29/1724900000000-demo.png",
-      "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-demo.png",
+      "key": "images/2026-08-29/1724900000000-abc123-demo.png",
+      "url": "https://yooy.cc.cd/images/2026-08-29/1724900000000-abc123-demo.png",
       "size": 102400,
       "contentType": "image/png",
       "uploadedAt": "2026-08-29T12:00:00.000Z"
     }
-  ]
+  ],
+  "total": 1,
+  "hasMore": false
 }</code></pre>
+      </div>
+
+      <!-- Delete Endpoint -->
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <code style="background:rgba(251,113,133,0.12);color:#fda4af;border-color:rgba(251,113,133,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">DELETE</code>
+          <code style="font-size:1rem;">/api/delete</code>
+          <span class="badge danger">
+            <i data-lucide="trash-2" class="icon-xs"></i>
+            <span>删除接口</span>
+          </span>
         </div>
+        <p style="color:var(--muted);margin:0 0 16px;">根据 key 删除指定图片对象。key 格式：<code>images/YYYY-MM-DD/timestamp-random-filename.ext</code></p>
+        <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=images/2026-08-29/1724900000000-demo.png"</code></pre>
 
-        <!-- Delete Endpoint -->
-        <div class="card">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-            <code style="background:rgba(251,113,133,0.12);color:#fda4af;border-color:rgba(251,113,133,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">DELETE</code>
-            <code style="font-size:1rem;">/api/delete</code>
-            <span class="badge danger">删除接口</span>
-          </div>
-
-          <p style="color:var(--muted);margin:0 0 16px;">根据 key 删除指定图片对象。key 格式：<code>images/YYYY-MM-DD/timestamp-filename.ext</code></p>
-
-          <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=images/2026-08-29/1724900000000-demo.png"</code></pre>
-
-          <h3 style="margin-top:16px;">响应体</h3>
-          <pre><code>{
+        <h3 style="margin-top:16px;">响应体</h3>
+        <pre><code>{
   "ok": true,
-  "message": "Image deleted successfully"
+  "message": "Deleted successfully",
+  "key": "images/2026-08-29/1724900000000-demo.png"
 }</code></pre>
-        </div>
+      </div>
 
-        <!-- Error Responses -->
-        <div class="card" style="margin-top:20px;">
-          <h3>错误响应</h3>
-          <pre><code>{
+      <!-- Error Responses -->
+      <div class="card" style="margin-top:20px;">
+        <h3 style="display:flex;align-items:center;gap:8px;">
+          <i data-lucide="alert-circle" class="icon-md" style="color:var(--warning);"></i>
+          <span>错误响应</span>
+        </h3>
+        <pre><code>{
   "ok": false,
   "error": "Missing file field in multipart/form-data"
 }</code></pre>
-          <p style="color:var(--muted);margin-top:12px;">常见错误：</p>
-          <ul style="color:var(--muted);line-height:2;">
-            <li><code>Missing file field</code> — 未提供文件</li>
-            <li><code>Unsupported body format</code> — 请求体格式不合法</li>
-            <li><code>EdgeOne Blob upload failed</code> — 存储上传失败</li>
-          </ul>
-        </div>
-      </section>
-    </main>
+        <p style="color:var(--muted);margin-top:12px;">常见错误：</p>
+        <ul style="color:var(--muted);line-height:2;">
+          <li><code>Missing file field</code> — 未提供文件</li>
+          <li><code>Invalid file type</code> — 不支持的文件格式</li>
+          <li><code>File too large</code> — 超过 10MB 限制</li>
+          <li><code>File not found</code> — 删除时 key 不存在</li>
+        </ul>
+      </div>
+    </section>
+  </main>
 
-    <footer>YOO · API 文档 v1.0</footer>
-  </body>
+  <footer>
+    <div class="footer-content">
+      <div class="footer-brand">
+        <svg class="brand-logo-small" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="32" height="32" rx="8" fill="url(#brand-gradient-f2)"/>
+          <path d="M10 22V14L16 18L22 14V22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="brand-gradient-f2" x1="0" y1="0" x2="32" y2="32">
+              <stop stop-color="#409EFF"/>
+              <stop offset="1" stop-color="#00C6FB"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div>
+          <div style="font-weight:600;color:var(--text);margin-bottom:4px;">YOO · API 文档</div>
+          <div style="font-size:0.75rem;color:var(--muted);">安全 · 快速 · 可靠</div>
+        </div>
+      </div>
+      <div class="footer-links">
+        <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
+        <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
+        <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+      </div>
+    </div>
+  </footer>
+
+  <div id="toastContainer" class="toast-container"></div>
+  <script src="./script.js"></script>
+  <script>if (window.lucide) lucide.createIcons();</script>
+</body>
 </html>
