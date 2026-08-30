@@ -55,42 +55,99 @@
   <main class="container">
     <section class="section" style="padding-top:16px;">
       <h1 style="margin-bottom:8px;">API 文档</h1>
-      <p class="lead" style="margin-bottom:28px;">YOO 提供完整的图片托管 REST API，支持上传图片、查询列表、删除对象。</p>
+      <p class="lead" style="margin-bottom:20px;">YOO 图床 API。以下每个示例都是实测跑通的，不是设想。</p>
 
-      <!-- Upload Endpoint -->
+      <!-- 两条上传路径的由来 -->
+      <div class="card" style="margin-bottom:20px;border-color:rgba(64,158,255,0.3);">
+        <h3 style="margin-top:0;">为什么上传有两条路</h3>
+        <p style="color:var(--muted);line-height:1.9;margin-bottom:10px;">
+          文件要存进 Blob 存储，有两条路，区别在于<strong style="color:var(--text);">字节是否经过边缘函数</strong>。
+        </p>
+        <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
+          <li><strong style="color:var(--text);">压缩中转</strong> —— 浏览器把文件交给边缘函数，函数再写库。边缘函数的<strong style="color:var(--text);">请求体上限是 1MB</strong>，所以这条路只收图片，且前端会把超过 950KB 的图先压到限内。胜在一条 <code>curl</code> 就能传。</li>
+          <li><strong style="color:var(--text);">原图直传</strong> —— 函数只签发一个几十十字节的临时 PUT 地址，浏览器拿它把字节<strong style="color:var(--text);">直接写进存储</strong>。字节不路过函数，所以 1MB 这个上限根本不会被触发：任意格式、不压缩、单个文件可到 20MB（存储单值上限 25MB）。</li>
+        </ul>
+        <p style="color:var(--muted);margin:12px 0 0;font-size:0.85rem;">
+          注：1MB 只限制「进来的请求体」。往外发图片的响应体没有这个限制——实测 2.6MB 原图经 <code>/i/</code> 返回是逐字节完整的，所以大图能正常显示，不需要改用 Cloud Functions。
+        </p>
+      </div>
+
+      <!-- 直传 第一步 -->
       <div class="card" style="margin-bottom:20px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
           <code style="background:rgba(45,212,191,0.12);color:#5eead4;border-color:rgba(45,212,191,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">POST</code>
-          <code style="font-size:1rem;">/api/upload</code>
-          <span class="badge success">
-            <i data-lucide="upload" class="icon-xs"></i>
-            <span>核心接口</span>
-          </span>
+          <code style="font-size:1rem;">/api/upload-url</code>
+          <span class="badge success"><span>大文件 · 原图</span></span>
         </div>
-        <h3>接口说明</h3>
-        <p style="color:var(--muted);margin:0 0 16px;">上传图片到 EdgeOne Blob Storage，返回公开访问 URL。支持三种上传方式，自动保留原始文件扩展名。</p>
-
-        <h3>上传方式一：multipart/form-data</h3>
-        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
-  -F "file=@/path/to/image.png"</code></pre>
-
-        <h3>上传方式二：JSON + Base64</h3>
-        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
+        <h3>直传第一步：索取签名地址</h3>
+        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload-url" \
   -H "Content-Type: application/json" \
-  -d '{"filename":"demo.png","base64":"data:image/png;base64,iVBORw0KGgo..."}'</code></pre>
-
-        <h3>上传方式三：纯二进制流</h3>
-        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" \
-  -H "Content-Type: image/png" \
-  --data-binary @image.png</code></pre>
-
-        <h3 style="margin-top:20px;">响应体</h3>
+  -d '{"filename":"photo.heic","size":3780000,"contentType":"image/heic"}'</code></pre>
+        <h3>响应</h3>
         <pre><code>{
   "ok": true,
-  "message": "Image uploaded to EdgeOne Blob Storage",
-  "key": "images/2026-08-30/1725000000000-abc123-demo.png",
-  "url": "https://yooy.cc.cd/images/2026-08-30/1725000000000-abc123-demo.png"
+  "key": "2026/08/a09ed68c894c-photo.heic",
+  "url": "https://yooy.cc.cd/i/2026/08/a09ed68c894c-photo.heic",
+  "uploadUrl": "https://…edgeone.site/…/yoo-images/2026/08/…?q-signature=…",
+  "expiresAt": 1788076565,
+  "contentType": "image/heic",
+  "method": "PUT"
 }</code></pre>
+        <h3>直传第二步：把字节 PUT 给 uploadUrl</h3>
+        <pre><code>curl -X PUT "&lt;上一步返回的 uploadUrl&gt;" \
+  -H "Content-Type: image/heic" \
+  --data-binary @photo.heic
+# → HTTP 200，文件已在存储里，url 立即可用</code></pre>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:0;">
+          签名地址绑死了 PUT 方法、这个 key、600 秒有效期、以及 Content-Type——四样任何一样对不上都是 403。所以第二步的 <code>Content-Type</code> 必须和第一步申报的完全一致。<code>url</code> 在 PUT 成功前就已返回，但那时访问会 404。
+        </p>
+      </div>
+
+      <!-- 中转 -->
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <code style="background:rgba(45,212,191,0.12);color:#5eead4;border-color:rgba(45,212,191,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">PUT</code>
+          <code style="font-size:1rem;">/api/upload</code>
+          <span class="badge"><span>≤950KB · 仅图片</span></span>
+        </div>
+        <h3>中转：原始字节（推荐）</h3>
+        <pre><code>curl -X PUT "https://yooy.cc.cd/api/upload?name=demo.png" \
+  -H "Content-Type: image/png" \
+  --data-binary @demo.png</code></pre>
+        <h3>中转：multipart（习惯用法也支持）</h3>
+        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" -F "file=@demo.png;type=image/png"</code></pre>
+        <h3>响应（两种方式一致）</h3>
+        <pre><code>{
+  "ok": true,
+  "key": "2026/08/6f20444f3562-demo.png",
+  "url": "https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png",
+  "size": 70,
+  "contentType": "image/png",
+  "name": "6f20444f3562-demo.png"
+}</code></pre>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:0;">
+          可接受 <code>png jpg jpeg gif webp svg avif bmp</code>。超 950KB 返回 <code>413</code> 并提示改用直传。文件名里的日期与随机前缀由服务端生成，原始名会 slugify 后留在 key 尾部便于识别。
+        </p>
+      </div>
+
+      <!-- serve -->
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <code style="background:rgba(64,158,255,0.12);color:#409eff;border-color:rgba(64,158,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
+          <code style="font-size:1rem;">/i/&lt;key&gt;</code>
+          <span class="badge success"><span>这就是图片链接</span></span>
+        </div>
+        <h3>接口说明</h3>
+        <p style="color:var(--muted);margin:0 0 12px;">
+          <strong style="color:var(--text);">Blob 存储不存在任何公开读取地址</strong>——官方 API 里没有 <code>getDownloadUrl</code> 之类的方法，签好的上传地址又只能 PUT，拿来读会 403。所以图片必须由这个路由把字节读出来再吐回去。<strong style="color:var(--text);">你要复制去分享的链接就是它。</strong>
+        </p>
+        <pre><code>curl -I "https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png"
+# HTTP 200 · Content-Type: image/png · Cache-Control: public, max-age=31536000, immutable</code></pre>
+        <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
+          <li>Content-Type 按 key 的扩展名推导；扩展名不在图片清单里会以 <code>application/octet-stream</code> 强制下载，避免这个域名被拿来执行上传的 HTML</li>
+          <li><code>?download=1</code> 可让图片也变成下载</li>
+          <li>响应带 <code>immutable</code>，同一个链接的内容视为永不变——文件名里有随机前缀，换图必换链接</li>
+        </ul>
       </div>
 
       <!-- List Endpoint -->
@@ -109,8 +166,10 @@
             <tr><th>参数</th><th>类型</th><th>默认值</th><th>说明</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>limit</code></td><td>number</td><td>50</td><td>每页数量，最大 100</td></tr>
-            <tr><td><code>cursor</code></td><td>string</td><td>-</td><td>分页游标，上次返回的 nextCursor</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>100</td><td>本页数量，最大 500</td></tr>
+            <tr><td><code>cursor</code></td><td>string</td><td>-</td><td>上一页返回的 <code>nextCursor</code></td></tr>
+            <tr><td><code>detail</code></td><td>1</td><td>-</td><td>逐项补读元信息，得到真实 <code>size</code> 与 <code>contentType</code>（最多前 50 项，较慢）</td></tr>
+            <tr><td><code>all</code></td><td>1</td><td>-</td><td>不限数量，由 SDK 自动聚合所有页</td></tr>
           </tbody>
         </table>
 
@@ -122,17 +181,45 @@
   "ok": true,
   "items": [
     {
-      "key": "images/2026-08-30/1725000000000-abc123.png",
-      "url": "https://yooy.cc.cd/images/2026-08-30/1725000000000-abc123.png",
-      "size": 102400,
-      "contentType": "image/png",
-      "uploadedAt": "2026-08-30T10:00:00.000Z"
+      "key": "2026/08/6f20444f3562-demo.png",
+      "name": "6f20444f3562-demo.png",
+      "url": "https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png",
+      "type": "image/png",
+      "etag": "\"2cd8bde463f5d82aae0f0cec061d6b8f\""
     }
   ],
   "total": 1,
   "nextCursor": null,
   "hasMore": false
 }</code></pre>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:0;">
+          存储层的列表接口只返回 <code>key</code> 和 <code>etag</code>，<strong style="color:var(--text);">没有文件大小这个字段</strong>，所以默认响应不含 <code>size</code>；要大小请加 <code>detail=1</code>。另外该接口必须显式带 <code>paginate:false</code> 才会返回 <code>cursor</code>——不传时 SDK 会自动聚合全部页且 <code>cursor</code> 恒为空，分页就变成了假的。
+        </p>
+      </div>
+
+      <!-- Meta Endpoint -->
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <code style="background:rgba(64,158,255,0.12);color:#409eff;border-color:rgba(64,158,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
+          <code style="font-size:1rem;">/api/meta</code>
+        </div>
+        <h3>接口说明</h3>
+        <p style="color:var(--muted);margin:0 0 12px;">读取单个对象的存储元信息（实测返回 <code>content-type</code>、<code>content-length</code>、<code>etag</code>、<code>cache-control</code> 等）。</p>
+        <pre><code>curl "https://yooy.cc.cd/api/meta?key=2026/08/6f20444f3562-demo.png"
+curl "https://yooy.cc.cd/api/meta?url=https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png"</code></pre>
+      </div>
+
+      <!-- Health Endpoint -->
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <code style="background:rgba(64,158,255,0.12);color:#409eff;border-color:rgba(64,158,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
+          <code style="font-size:1rem;">/api/health</code>
+        </div>
+        <h3>接口说明</h3>
+        <p style="color:var(--muted);margin:0;">报告存储桶是否真的可达，以及三条路径各自的体积上限。部署后先打这个，能立刻区分「代码没上线」和「存储不通」。</p>
+        <pre><code>curl "https://yooy.cc.cd/api/health"
+# {"ok":true,"store":"yoo-images","storage":{"ok":true,"sampled":0},
+#  "limits":{"relayMaxBytes":972800,"directMaxBytes":20971520,"uploadUrlTtl":600}}</code></pre>
       </div>
 
       <!-- Delete Endpoint -->
