@@ -115,9 +115,8 @@
         .map(k => `${k}:${headers[Object.keys(headers).find(key => key.toLowerCase() === k)].trim()}`)
         .join('\n') + '\n';
 
-      // AWS SigV4: canonical URI 需要对每段路径单独编码
-      const canonicalUri = urlObj.pathname.split('/').map(encodeURIComponent).join('/');
-      const canonicalQuerystring = urlObj.search.slice(1).split('&').sort().join('&');
+      const canonicalUri = urlObj.pathname;
+      const canonicalQuerystring = urlObj.search.slice(1);
 
       const canonicalRequest = [
         method,
@@ -159,12 +158,11 @@
       urlObj.searchParams.set('X-Amz-Expires', expiresSeconds.toString());
       urlObj.searchParams.set('X-Amz-SignedHeaders', 'host');
 
-      // AWS SigV4: canonical URI 需要对每段路径单独编码
-      const canonicalUri = urlObj.pathname.split('/').map(encodeURIComponent).join('/');
+      const canonicalUri = urlObj.pathname;
       // Canonical querystring: 按键排序，键值都要编码
       const canonicalQuerystring = Array.from(urlObj.searchParams.entries())
+        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
         .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-        .sort()
         .join('&');
 
       const canonicalRequest = [
@@ -250,9 +248,9 @@
       result.className = '';
 
       try {
-        const key = `${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/${Date.now()}-${file.name}`;
+        const rawKey = `${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/${Date.now()}-${file.name}`;
+        const key = rawKey.split('/').map(encodeURIComponent).join('/');
         // Virtual-hosted 格式：bucket 在子域名，路径只有 key
-        const host = new URL(s3Config.endpoint).host;
         const url = `${s3Config.endpoint.replace('://', `://${s3Config.bucket}.`)}/${key}`;
         
         const signedUrl = await presignUrl('PUT', url, s3Config, 3600);
