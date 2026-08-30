@@ -1,1 +1,11 @@
-Nothing should be ignored based on the provided file changes, as they only include source code files (.js files) without any build artifacts, dependencies, or temporary files.
+# 依赖（构建时由 package.json 安装，不入库）
+node_modules/
+
+# 本地工具与编辑器状态
+.qoder/settings.local.json
+.DS_Store
+
+# 环境与密钥
+.env
+.env.local
+*.log

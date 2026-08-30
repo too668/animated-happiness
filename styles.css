@@ -23,7 +23,7 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "MaoKenZhuYuanTi", "Arturito Slab", "ZCOOL XiaoWei", serif;
+  --font-display: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
 }
 
 [data-theme="dark"] {
@@ -466,24 +466,6 @@ footer {
   .nav a span { display: none; }
   .hero { padding: 40px 16px; }
   .section { padding: 32px 0; }
-}
-
-/* ── Font Face ── */
-@font-face {
-  font-family: 'MaoKenZhuYuanTi';
-  src: url('https://www.dnsneko.com/fonts/MaoKenZhuYuanTi.woff2') format('woff2'),
-       url('https://www.dnsneko.com/fonts/MaoKenZhuYuanTi.woff') format('woff');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Arturito Slab';
-  src: url('https://www.dnsneko.com/fonts/ArturitoSlab.woff2') format('woff2'),
-       url('https://www.dnsneko.com/fonts/ArturitoSlab.woff') format('woff');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
 }
 
 /* ── Spinner animation ── */
