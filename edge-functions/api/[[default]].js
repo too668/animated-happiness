@@ -276,6 +276,181 @@ function toArrayBuffer(value) {
   throw new TypeError('unsupported binary value');
 }
 
+// ── S3 SigV4 签名 ───────────────────────────────────────────
+const enc = new TextEncoder();
+
+function awsUriEncode(str) {
+  return encodeURIComponent(str).replace(/[!*'()]/g, c =>
+    '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
+  );
+}
+
+async function s3Hmac(key, data) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  return crypto.subtle.sign('HMAC', cryptoKey, enc.encode(data));
+}
+
+async function s3Hash(data) {
+  return crypto.subtle.digest('SHA-256', enc.encode(data));
+}
+
+function s3Hex(buf) {
+  return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function s3Ymd(d) { return d.toISOString().slice(0, 10).replace(/-/g, ''); }
+function s3Ymdhms(d) { return d.toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z'; }
+
+async function s3SigningKey(secret, date, region) {
+  const kDate = await s3Hmac(enc.encode('AWS4' + secret), date);
+  const kRegion = await s3Hmac(kDate, region);
+  const kService = await s3Hmac(kRegion, 's3');
+  return s3Hmac(kService, 'aws4_request');
+}
+
+function s3Host() {
+  const endpointHost = new URL(IDRIVE_ENDPOINT).host;
+  return `${envVar(null, 'IDRIVE_BUCKET')}.${endpointHost}`;
+}
+
+async function s3PresignPut(pathname, contentType, expireSeconds) {
+  const bucket = envVar(null, 'IDRIVE_BUCKET');
+  const accessKey = envVar(null, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(null, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host();
+  const d = new Date();
+  const date = s3Ymd(d);
+  const datetime = s3Ymdhms(d);
+  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+  const credential = `${accessKey}/${scope}`;
+
+  const params = [
+    ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
+    ['X-Amz-Credential', credential],
+    ['X-Amz-Date', datetime],
+    ['X-Amz-Expires', String(expireSeconds)],
+    ['X-Amz-SignedHeaders', 'content-type;host']
+  ];
+
+  const qs = params.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([k, v]) => `${awsUriEncode(k)}=${awsUriEncode(v)}`)
+    .join('&');
+
+  const canonical = [
+    'PUT', pathname, qs,
+    `content-type:${contentType}\nhost:${host}\n`,
+    'content-type;host',
+    'UNSIGNED-PAYLOAD'
+  ].join('\n');
+
+  const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
+  const key = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const sig = s3Hex(await s3Hmac(key, toSign));
+
+  return `https://${host}${pathname}?${qs}&X-Amz-Signature=${sig}`;
+}
+
+async function s3ListObjects(limit) {
+  const bucket = envVar(null, 'IDRIVE_BUCKET');
+  const accessKey = envVar(null, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(null, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host();
+  const d = new Date();
+  const date = s3Ymd(d);
+  const datetime = s3Ymdhms(d);
+  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+
+  const url = `https://${host}/?list-type=2&max-keys=${limit}`;
+  const urlObj = new URL(url);
+  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+  const headers = {
+    'host': urlObj.host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': datetime
+  };
+
+  const sortedKeys = Object.keys(headers).sort();
+  const signedHeaders = sortedKeys.join(';');
+  const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}`).join('\n') + '\n';
+
+  const canonical = [
+    'GET', urlObj.pathname, urlObj.search.slice(1),
+    canonicalHeaders, signedHeaders, payloadHash
+  ].join('\n');
+
+  const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
+  const key = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const sig = s3Hex(await s3Hmac(key, toSign));
+
+  const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { ...headers, Authorization: auth }
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`S3 list failed ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const xml = await res.text();
+  const keys = [];
+  const keyRe = /<Key>([^<]+)<\/Key>/g;
+  let m;
+  while ((m = keyRe.exec(xml))) keys.push(decodeURIComponent(m[1]));
+  return keys;
+}
+
+async function s3DeleteObject(key) {
+  const bucket = envVar(null, 'IDRIVE_BUCKET');
+  const accessKey = envVar(null, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(null, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host();
+  const pathname = '/' + key;
+  const d = new Date();
+  const date = s3Ymd(d);
+  const datetime = s3Ymdhms(d);
+  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+
+  const url = `https://${host}${pathname}`;
+  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+  const headers = {
+    'host': host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': datetime
+  };
+
+  const sortedKeys = Object.keys(headers).sort();
+  const signedHeaders = sortedKeys.join(';');
+  const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}`).join('\n') + '\n';
+
+  const canonical = [
+    'DELETE', pathname, '',
+    canonicalHeaders, signedHeaders, payloadHash
+  ].join('\n');
+
+  const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
+  const key2 = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const sig = s3Hex(await s3Hmac(key2, toSign));
+
+  const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
+
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { ...headers, Authorization: auth }
+  });
+
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text();
+    throw new Error(`S3 delete failed ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+
 async function readKeyParam(url) {
   const raws = [...url.searchParams.getAll('key'), ...url.searchParams.getAll('url')];
   const pick = raws.find((v) => v && !/^yoo_/i.test(String(v).trim())) || '';
@@ -350,9 +525,16 @@ export async function onRequest(context) {
         store: STORE_NAME,
         storage: probe,
         keys: keysProbe,
+        s3: {
+          configured: s3Configured,
+          endpoint: IDRIVE_ENDPOINT,
+          region: IDRIVE_REGION,
+          bucket: s3Configured ? envVar(null, 'IDRIVE_BUCKET') : ''
+        },
         limits: {
           relayMaxBytes: RELAY_MAX_BYTES,
           directMaxBytes: DIRECT_MAX_BYTES,
+          s3MaxBytes: S3_MAX_BYTES,
           uploadUrlTtl: UPLOAD_URL_TTL
         },
         time: new Date().toISOString()
@@ -467,12 +649,35 @@ export async function onRequest(context) {
     if (request.method === 'GET' && route === 'list') {
       const gate = permGate(await resolveAuth(context, request, url), 'list');
       if (gate) return gate;
+      const storage = url.searchParams.get('storage') || 'blob';
       const want = parseInt(url.searchParams.get('limit'), 10);
       const limit = Math.min(Number.isFinite(want) ? want : LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT);
+
+      // ── S3 列表 ──
+      if (storage === 's3') {
+        if (!s3Configured) return fail('S3 存储未配置', 503);
+        try {
+          const keys = await s3ListObjects(limit);
+          const items = keys.map(k => {
+            const name = k.split('/').pop();
+            return {
+              key: k,
+              name,
+              url: `https://${s3Host()}/${k}`,
+              type: MIME_BY_EXT[extOf(k)] || 'application/octet-stream',
+              etag: null
+            };
+          });
+          return json({ ok: true, items, total: items.length, storage: 's3' });
+        } catch (e) {
+          return fail('S3 列表失败：' + e.message, 500);
+        }
+      }
+
+      // ── Blob 列表（默认）──
       const cursor = url.searchParams.get('cursor');
       const detail = url.searchParams.get('detail') === '1';
 
-      // paginate:false 才会返回 cursor；默认自动翻页时 cursor 恒为 undefined
       const options = { limit, paginate: false };
       if (cursor) options.cursor = cursor;
       if (url.searchParams.get('all') === '1') delete options.limit;
@@ -510,7 +715,8 @@ export async function onRequest(context) {
         items,
         total: items.length,
         nextCursor: result.cursor || null,
-        hasMore: Boolean(result.cursor)
+        hasMore: Boolean(result.cursor),
+        storage: 'blob'
       });
     }
 
@@ -539,19 +745,44 @@ export async function onRequest(context) {
         return fail('需要 JSON 请求体');
       }
 
+      const storage = url.searchParams.get('storage') || 'blob';
       const name = String(body.filename || body.name || 'file').split(/[\\/]/).pop();
       const size = Number(body.size);
-      if (Number.isFinite(size) && size > DIRECT_MAX_BYTES) {
-        return fail(`文件过大，直传上限 ${Math.floor(DIRECT_MAX_BYTES / 1024 / 1024)}MB`);
-      }
 
       const contentType =
         typeof body.contentType === 'string' && /^\w+\/[\w.+-]+$/.test(body.contentType)
           ? body.contentType
           : 'application/octet-stream';
 
+      // ── S3 直传 ──
+      if (storage === 's3') {
+        if (!s3Configured) return fail('S3 存储未配置（缺环境变量）', 503);
+        if (Number.isFinite(size) && size > S3_MAX_BYTES) {
+          return fail(`S3 文件过大，上限 ${Math.floor(S3_MAX_BYTES / 1024 / 1024 / 1024)}GB`);
+        }
+        const safeName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const key = `uploads/${buildKey(safeName)}`;
+        const pathname = '/' + key;
+        const uploadUrl = await s3PresignPut(pathname, contentType, UPLOAD_URL_TTL);
+        const s3PublicUrl = `https://${s3Host()}/${key}`;
+        return json({
+          ok: true,
+          key,
+          url: s3PublicUrl,
+          uploadUrl,
+          expiresAt: Date.now() + UPLOAD_URL_TTL * 1000,
+          contentType,
+          method: 'PUT',
+          storage: 's3'
+        });
+      }
+
+      // ── Blob 直传（默认）──
+      if (Number.isFinite(size) && size > DIRECT_MAX_BYTES) {
+        return fail(`Blob 文件过大，直传上限 ${Math.floor(DIRECT_MAX_BYTES / 1024 / 1024)}MB`);
+      }
+
       const key = buildKey(name);
-      // createUploadUrl 会把 Content-Type 签进地址，客户端 PUT 时必须原样带回，否则 403
       const signed = await control.createUploadUrl(key, {
         expireSeconds: UPLOAD_URL_TTL,
         contentType
@@ -564,7 +795,8 @@ export async function onRequest(context) {
         uploadUrl: signed.url,
         expiresAt: signed.expiresAt,
         contentType,
-        method: 'PUT'
+        method: 'PUT',
+        storage: 'blob'
       });
     }
 
@@ -645,15 +877,31 @@ export async function onRequest(context) {
     if (request.method === 'DELETE' && route === 'delete') {
       const gate = permGate(await resolveAuth(context, request, url), 'delete');
       if (gate) return gate;
+      const storage = url.searchParams.get('storage') || 'blob';
+
+      // ── S3 删除 ──
+      if (storage === 's3') {
+        if (!s3Configured) return fail('S3 存储未配置', 503);
+        const rawKey = url.searchParams.get('key') || url.searchParams.get('url') || '';
+        const key = keyFromAny(rawKey);
+        if (!key) return fail('缺少参数 key');
+        try {
+          await s3DeleteObject(key);
+          return json({ ok: true, key, message: '已删除', storage: 's3' });
+        } catch (e) {
+          return fail('S3 删除失败：' + e.message, 500);
+        }
+      }
+
+      // ── Blob 删除（默认）──
       const { key, error } = await readKeyParam(url);
       if (error) return fail(error);
 
-      // Store 上没有 head()，判存在要用 getMetadata()
       const meta = await control.getMetadata(key);
       if (!meta) return fail('文件不存在', 404);
 
       await control.delete(key);
-      return json({ ok: true, key, message: '已删除' });
+      return json({ ok: true, key, message: '已删除', storage: 'blob' });
     }
 
     return fail('接口不存在', 404);
