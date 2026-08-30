@@ -1,19 +1,25 @@
-// ── YOO Image Manager - Clean Rebuild ──
+// ── YOO 图片管理 ──
+// 两条上传路径：
+//   原图直传 —— 向 /api/upload-url 要签名地址，浏览器把字节直接 PUT 给 Blob（任意格式，≤20MB）
+//   压缩中转 —— 仅图片，体积压到 Edge 1MB 请求体上限以下，用原始字节 PUT 给 /api/upload
+
+var RELAY_LIMIT = 950 * 1024;
+var DIRECT_LIMIT = 20 * 1024 * 1024;
+var IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'];
+var NO_COMPRESS_EXT = ['gif', 'svg']; // canvas 会丢动画 / 会把矢量栅格化
 
 var STORAGE_KEY = 'yoo-image-manager-items';
-var API_BASE = 'https://yooy.cc.cd';
+var ALIAS_KEY = 'yoo-image-manager-aliases';
 
 // ── THEME ──
-(function() {
+(function () {
   var saved = localStorage.getItem('yoo-theme');
   var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  var theme = saved || (prefersDark ? 'dark' : 'light');
-  document.documentElement.setAttribute('data-theme', theme);
+  document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'dark' : 'light'));
 })();
 
 function toggleTheme() {
-  var current = document.documentElement.getAttribute('data-theme');
-  var next = current === 'dark' ? 'light' : 'dark';
+  var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
   localStorage.setItem('yoo-theme', next);
 }
@@ -24,7 +30,7 @@ var ICONS = {
   refresh: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
   view: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
   copy: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-  rename: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  alias: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
   trash: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
   check: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
   x: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
@@ -39,15 +45,184 @@ function showToast(msg, type) {
   if (!box) return;
   var t = document.createElement('div');
   t.className = 'toast ' + type;
-  var icons = { success: ICONS.check, error: ICONS.x, info: ICONS.info };
-  t.innerHTML = (icons[type] || ICONS.info) + '<span>' + msg + '</span>';
+  t.innerHTML = ({ success: ICONS.check, error: ICONS.x, info: ICONS.info })[type] + '<span>' + esc(msg) + '</span>';
   box.appendChild(t);
-  setTimeout(function() {
+  setTimeout(function () {
     t.style.opacity = '0';
     t.style.transform = 'translateX(10px)';
     t.style.transition = 'all 0.3s ease';
-    setTimeout(function() { t.remove(); }, 300);
-  }, 3000);
+    setTimeout(function () { t.remove(); }, 300);
+  }, 4000);
+}
+
+// ── HELPERS ──
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function extOf(name) {
+  var s = String(name || '');
+  var i = s.lastIndexOf('.');
+  return i > 0 ? s.slice(i + 1).toLowerCase() : '';
+}
+
+function humanSize(n) {
+  if (!n && n !== 0) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+// API 基址默认跟随当前来源，预览域名和本地调试都能用
+function getApiBase() {
+  var el = document.getElementById('apiEndpoint');
+  var v = el ? el.value.trim() : '';
+  return v || location.origin;
+}
+
+function getAliases() {
+  try { return JSON.parse(localStorage.getItem(ALIAS_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+
+function asyncJson(url, options) {
+  return fetch(url, options).then(function (r) {
+    return r.text().then(function (text) {
+      var data = null;
+      try { data = JSON.parse(text); } catch (e) { /* 非 JSON 响应 */ }
+      if (!r.ok || !data || data.ok !== true) {
+        throw new Error((data && data.error) || 'HTTP ' + r.status + (text ? ' · ' + text.slice(0, 60) : ''));
+      }
+      return data;
+    });
+  });
+}
+
+// ── 压缩：把图片压到 Edge 请求体上限以下 ──
+function compressToLimit(file, limit) {
+  if (file.size <= limit && IMAGE_EXT.indexOf(extOf(file.name)) >= 0) {
+    return Promise.resolve(file);
+  }
+  if (NO_COMPRESS_EXT.indexOf(extOf(file.name)) >= 0 || extOf(file.name) === 'bmp') {
+    return Promise.reject(new Error(
+      extOf(file.name) === 'bmp'
+        ? 'BMP 不压缩且体积通常超限，请改用「原图直传」'
+        : 'GIF / SVG 压缩会丢动画或变栅格图，请改用「原图直传」'
+    ));
+  }
+
+  return createImageBitmap(file).then(function (bitmap) {
+    var maxEdge = 4096;
+    var quality = 0.85;
+    var attempt = 0;
+
+    function tryOnce() {
+      attempt++;
+      var scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+      var w = Math.max(1, Math.round(bitmap.width * scale));
+      var h = Math.max(1, Math.round(bitmap.height * scale));
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+
+      var type = extOf(file.name) === 'png' ? 'image/png' : 'image/jpeg';
+      var outName = file.name.replace(/\.[^.]+$/, '') + (type === 'image/png' ? '.png' : '.jpg');
+
+      return new Promise(function (resolve, reject) {
+        canvas.toBlob(function (blob) {
+          if (!blob) return reject(new Error('压缩失败'));
+          if (blob.size <= limit || attempt >= 5) {
+            if (blob.size > limit) {
+              return reject(new Error('压缩 5 次仍超过 ' + humanSize(limit) + '，请改用「原图直传」'));
+            }
+            blob.name = outName;
+            resolve({ blob: blob, name: outName, from: file.size, to: blob.size });
+          } else {
+            quality *= 0.7;
+            maxEdge = Math.round(maxEdge * 0.75);
+            resolve(tryOnce());
+          }
+        }, type, quality);
+      });
+    }
+
+    return tryOnce();
+  });
+}
+
+// ── 上传 ──
+function uploadDirect(file) {
+  var base = getApiBase();
+  var contentType = file.type || 'application/octet-stream';
+  return asyncJson(base + '/api/upload-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, size: file.size, contentType: contentType })
+  }).then(function (signed) {
+    // 签名把 Content-Type 也签进去了，PUT 时必须原样带回，否则 403
+    return fetch(signed.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': signed.contentType || contentType } })
+      .then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error('直传写入失败 HTTP ' + r.status + (t ? ' · ' + t.slice(0, 80) : '')); });
+        return { key: signed.key, url: signed.url, name: file.name, size: file.size, mode: '直传' };
+      });
+  });
+}
+
+function uploadRelay(file) {
+  if (IMAGE_EXT.indexOf(extOf(file.name)) < 0 && !/^image\//.test(file.type || '')) {
+    return Promise.reject(new Error('中转只收图片，请用「原图直传」'));
+  }
+  var base = getApiBase();
+  return compressToLimit(file, RELAY_LIMIT).then(function (r) {
+    var blob = r.blob || file;
+    var name = r.name || file.name;
+    return asyncJson(base + '/api/upload?name=' + encodeURIComponent(name), {
+      method: 'PUT',
+      headers: { 'Content-Type': blob.type || 'image/png' },
+      body: blob
+    }).then(function (res) {
+      if (r.to) showToast(name + '：' + humanSize(r.from) + ' → ' + humanSize(r.to), 'info');
+      return { key: res.key, url: res.url, name: name, size: res.size, mode: '中转' };
+    });
+  });
+}
+
+function uploadFiles(files, mode) {
+  if (!files || !files.length) { showToast('请选择文件', 'error'); return Promise.resolve(); }
+  var buttons = document.querySelectorAll('#dropZone button, #uploadBtn');
+  Array.prototype.forEach.call(buttons, function (b) { b.disabled = true; });
+  var zone = document.getElementById('dropZone');
+  var zoneText = zone ? zone.querySelector('p strong') : null;
+  var original = zoneText ? zoneText.textContent : '';
+
+  var list = getSavedList();
+  var ok = 0, failed = [];
+  var chain = Promise.resolve();
+
+  Array.prototype.forEach.call(files, function (file, i) {
+    chain = chain.then(function () {
+      if (zoneText) zoneText.textContent = '上传中 ' + (i + 1) + '/' + files.length + '：' + file.name;
+      var task = mode === 'direct' ? uploadDirect(file) : uploadRelay(file);
+      return task.then(function (item) {
+        list.unshift({ key: item.key, url: item.url, name: item.name, size: item.size, uploadedAt: Date.now() });
+        ok++;
+      }).catch(function (e) {
+        failed.push(file.name + '：' + e.message);
+      });
+    });
+  });
+
+  return chain.then(function () {
+    saveList(list);
+    renderList(list);
+    if (zoneText) zoneText.textContent = original;
+    Array.prototype.forEach.call(buttons, function (b) { b.disabled = false; });
+    if (ok) showToast('成功上传 ' + ok + ' 个文件', 'success');
+    if (failed.length) {
+      showToast(failed.length + ' 个文件上传失败：' + failed[0], 'error');
+      console.warn('上传失败明细:', failed);
+    }
+    if (ok) return syncFromServer();
+  });
 }
 
 // ── STORAGE ──
@@ -55,210 +230,270 @@ function getSavedList() {
   try {
     var s = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     return Array.isArray(s) ? s : [];
-  } catch(e) { return []; }
+  } catch (e) { return []; }
 }
+
 function saveList(items) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  updateCounts(items);
+}
+
+function updateCounts(items) {
   var el = document.getElementById('totalCount');
-  if (el) el.textContent = items.length + ' 张图片';
+  if (el) el.textContent = items.length;
+  var label = document.getElementById('countLabel');
+  if (label) label.textContent = '共 ' + items.length + ' 张';
 }
 
-// ── HELPERS ──
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+// ── 服务器同步 ──
+var nextCursor = null;
 
-function getApiBase() {
-  var el = document.getElementById('apiEndpoint');
-  return (el ? el.value.trim() : '') || API_BASE;
-}
-
-async function fetchApi(ep, opts) {
-  opts = opts || {};
-  var url = getApiBase() + ep;
-  var r = await fetch(url, opts);
-  if (!r.ok) {
-    var txt = await r.text().catch(function(){ return ''; });
-    throw new Error('HTTP ' + r.status + (txt ? ': ' + txt.substring(0,80) : ''));
-  }
-  return await r.json();
-}
-
-// ── API CALLS ──
-async function loadFromServer() {
-  try {
-    var res = await fetchApi('/api/list');
-    if (res && res.ok && Array.isArray(res.items)) {
-      var items = res.items.map(function(it) {
-        var name = it.key.split('/').pop() || 'image';
-        return { key: it.key, name: name, url: it.url, size: it.size ? Math.ceil(it.size/1024)+' KB' : '未知' };
+function syncFromServer() {
+  return asyncJson(getApiBase() + '/api/list?limit=100')
+    .then(function (res) {
+      var aliases = getAliases();
+      var items = res.items.map(function (it) {
+        return {
+          key: it.key,
+          name: aliases[it.key] || it.name,
+          aliasOnly: Boolean(aliases[it.key]),
+          url: it.url,
+          type: it.type,
+          uploadedAt: null
+        };
       });
       saveList(items);
       renderList(items);
-      showToast('已同步 ' + items.length + ' 张图片', 'success');
+      nextCursor = res.nextCursor || null;
       return items;
-    }
-  } catch(e) {
-    console.warn('Server load failed:', e);
-    showToast('服务器同步失败，使用本地缓存', 'info');
-  }
-  return getSavedList();
+    })
+    .catch(function (e) {
+      showToast('读取服务器列表失败：' + e.message, 'error');
+      return getSavedList();
+    });
 }
 
-async function deleteFromServer(key) {
-  try {
-    var res = await fetchApi('/api/delete?key=' + encodeURIComponent(key), { method: 'DELETE' });
-    return res && res.ok === true;
-  } catch(e) {
-    console.error('Delete failed:', e);
-    return false;
-  }
+function loadMore() {
+  if (!nextCursor) return Promise.resolve();
+  return asyncJson(getApiBase() + '/api/list?limit=100&cursor=' + encodeURIComponent(nextCursor))
+    .then(function (res) {
+      var existing = {};
+      var items = getSavedList();
+      items.forEach(function (it) { existing[it.key] = true; });
+      var merged = items.concat(res.items.filter(function (it) { return !existing[it.key]; }));
+      nextCursor = res.nextCursor || null;
+      saveList(merged);
+      renderList(merged);
+      if (!res.hasMore) showToast('已经到底了', 'info');
+    })
+    .catch(function (e) { showToast('加载更多失败：' + e.message, 'error'); });
 }
 
-async function uploadFiles(files) {
-  if (!files || !files.length) { showToast('请选择图片文件', 'error'); return; }
-  var endpoint = getApiBase() + '/api/upload';
-  var list = getSavedList();
-  var okCount = 0, failCount = 0;
-  for (var i = 0; i < files.length; i++) {
-    var f = files[i];
-    try {
-      var fd = new FormData();
-      fd.append('file', f, f.name);
-      var r = await fetch(endpoint, { method: 'POST', body: fd });
-      var j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error || 'Upload failed');
-      list.unshift({ key: j.key, name: f.name, url: j.url, size: Math.ceil(f.size/1024)+' KB' });
-      okCount++;
-    } catch(e) {
-      list.unshift({ key: Date.now()+'-'+f.name, name: f.name, url: URL.createObjectURL(f), size: Math.ceil(f.size/1024)+' KB', localOnly: true });
-      failCount++;
-    }
-  }
-  saveList(list);
-  renderList(list);
-  if (okCount > 0) {
-    showToast('成功上传 ' + okCount + ' 张', 'success');
-    setTimeout(function() { loadFromServer(); }, 800);
-  }
-  if (failCount > 0) showToast('有 ' + failCount + ' 张上传失败，已保存本地', 'error');
+function deleteItem(key) {
+  return asyncJson(getApiBase() + '/api/delete?key=' + encodeURIComponent(key), { method: 'DELETE' })
+    .then(function () { return true; })
+    .catch(function (e) {
+      if (/不存在/.test(e.message)) return true; // 服务器上已经没有了，本地照清
+      throw e;
+    });
 }
 
 // ── RENDER ──
 function renderList(items) {
   var root = document.getElementById('imageList');
   if (!root) return;
-  var q = (document.getElementById('searchInput') || {}).value.toLowerCase() || '';
-  var filtered = q ? items.filter(function(it){ return it.name.toLowerCase().includes(q); }) : items;
+  var input = document.getElementById('searchInput');
+  var q = input ? input.value.trim().toLowerCase() : '';
+  var filtered = q ? items.filter(function (it) { return String(it.name).toLowerCase().indexOf(q) >= 0; }) : items;
+
+  var moreBtn = '';
+  if (!q && nextCursor) {
+    moreBtn = '<button id="loadMoreBtn" class="button secondary" type="button" style="grid-column:1/-1;justify-self:center;margin-top:8px;">加载更早的图片</button>';
+  }
+
   if (!filtered.length) {
-    root.innerHTML = '<div class="empty"><i data-lucide="image" class="icon-lg" style="opacity:0.3;"></i><p>暂无图片</p></div>';
-    if (window.lucide) { try { lucide.createIcons(); } catch(e){} }
+    root.innerHTML = '<div class="empty"><i data-lucide="image" class="icon-lg" style="opacity:0.3;"></i><p>' +
+      (q ? '没有匹配「' + esc(q) + '」的图片' : '暂无图片，上传第一张吧！') + '</p></div>' + moreBtn;
+    refreshIcons();
+    bindMore();
     return;
   }
+
   var html = '';
   for (var i = 0; i < filtered.length; i++) {
     var it = filtered[i];
+    var ext = extOf(it.key || it.name).toUpperCase();
     html += '<div class="image-item" data-key="' + esc(it.key) + '">' +
       '<img src="' + esc(it.url) + '" alt="' + esc(it.name) + '" loading="lazy" />' +
       '<div class="image-meta">' +
         '<strong title="' + esc(it.name) + '">' + esc(it.name) + '</strong>' +
-        '<div class="muted">' + esc(it.size||'') + (it.localOnly ? ' · 本地' : '') + '</div>' +
+        '<div class="muted">' + esc(ext || '文件') + (it.size ? ' · ' + esc(humanSize(it.size)) : '') + (it.aliasOnly ? ' · 别名' : '') + '</div>' +
         '<div class="row-inline">' +
-          '<button class="small-btn" data-a="view" data-k="' + esc(it.key) + '" title="查看">' + ICONS.view + '</button>' +
-          '<button class="small-btn" data-a="copy" data-k="' + esc(it.key) + '" title="复制">' + ICONS.copy + '</button>' +
-          '<button class="small-btn" data-a="rename" data-k="' + esc(it.key) + '" title="重命名">' + ICONS.rename + '</button>' +
+          '<button class="small-btn" data-a="view" data-k="' + esc(it.key) + '" title="新标签页打开">' + ICONS.view + '</button>' +
+          '<button class="small-btn" data-a="copy" data-k="' + esc(it.key) + '" title="复制链接">' + ICONS.copy + '</button>' +
+          '<button class="small-btn" data-a="alias" data-k="' + esc(it.key) + '" title="设置显示别名">' + ICONS.alias + '</button>' +
           '<button class="small-btn danger" data-a="delete" data-k="' + esc(it.key) + '" title="删除">' + ICONS.trash + '</button>' +
         '</div></div></div>';
   }
-  root.innerHTML = html;
-  if (window.lucide) { try { lucide.createIcons(); } catch(e){} }
+  root.innerHTML = html + moreBtn;
+  refreshIcons();
+  bindMore();
 
-  var btns = root.querySelectorAll('button');
-  for (var j = 0; j < btns.length; j++) {
-    (function(btn) {
-      btn.addEventListener('click', async function() {
-        var act = btn.dataset.a;
-        var k = btn.dataset.k;
-        var target = filtered.find(function(it){ return it.key === k; });
-        if (!target) return;
-        if (act === 'view') { window.open(target.url, '_blank'); }
-        else if (act === 'copy') {
-          navigator.clipboard.writeText(target.url)
-            .then(function(){ showToast('URL 已复制', 'success'); })
-            .catch(function(){ showToast('复制失败', 'error'); });
-        }
-        else if (act === 'rename') {
-          var nn = window.prompt('请输入新文件名', target.name);
-          if (!nn || !nn.trim()) return;
-          var up = getSavedList().map(function(it){ return it.key===k ? Object.assign({},it,{name:nn.trim()}) : it; });
-          saveList(up); renderList(up);
-          showToast('重命名成功', 'success');
-        }
-        else if (act === 'delete') {
-          if (!window.confirm('确定删除"' + target.name + '"?')) return;
-          var orig = btn.innerHTML;
-          btn.disabled = true;
-          btn.innerHTML = ICONS.spinner + ' 删除中...';
-          try {
-            var delResult = false;
-            if (!target.localOnly) delResult = await deleteFromServer(target.key);
-            else delResult = true;
-            var up2 = getSavedList().filter(function(it){ return it.key !== k; });
-            saveList(up2); renderList(up2);
-            showToast(delResult ? '图片已删除' : '已从本地移除', delResult ? 'success' : 'info');
-          } catch(e) { showToast('删除失败', 'error'); }
-          finally { btn.disabled = false; btn.innerHTML = orig; }
-        }
-      });
-    })(btns[j]);
+  Array.prototype.forEach.call(root.querySelectorAll('.small-btn'), function (btn) {
+    btn.addEventListener('click', function () {
+      var act = btn.dataset.a;
+      var key = btn.dataset.k;
+      var target = getSavedList().find(function (it) { return it.key === key; });
+      if (!target) return;
+
+      if (act === 'view') {
+        window.open(target.url, '_blank');
+      } else if (act === 'copy') {
+        copyText(target.url);
+      } else if (act === 'alias') {
+        var nn = window.prompt('设置显示别名（只影响本浏览器的显示，不会改服务器上的文件名）', target.name);
+        if (!nn || !nn.trim()) return;
+        var aliases = getAliases();
+        aliases[key] = nn.trim();
+        localStorage.setItem(ALIAS_KEY, JSON.stringify(aliases));
+        var up = getSavedList().map(function (it) {
+          return it.key === key ? Object.assign({}, it, { name: nn.trim(), aliasOnly: true }) : it;
+        });
+        saveList(up); renderList(up);
+        showToast('已设置别名（本地显示）', 'success');
+      } else if (act === 'delete') {
+        if (!window.confirm('删除这张图？链接会立即失效。')) return;
+        var orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = ICONS.spinner;
+        deleteItem(key).then(function () {
+          var aliases = getAliases();
+          delete aliases[key];
+          localStorage.setItem(ALIAS_KEY, JSON.stringify(aliases));
+          var up2 = getSavedList().filter(function (it) { return it.key !== key; });
+          saveList(up2); renderList(up2);
+          showToast('已删除', 'success');
+        }).catch(function (e) {
+          showToast('删除失败：' + e.message, 'error');
+        }).finally(function () {
+          btn.disabled = false;
+          btn.innerHTML = orig;
+        });
+      }
+    });
+  });
+}
+
+function bindMore() {
+  var b = document.getElementById('loadMoreBtn');
+  if (b) b.addEventListener('click', function () {
+    b.disabled = true;
+    b.innerHTML = ICONS.spinner + ' 加载中...';
+    loadMore().then(function () { b.disabled = false; });
+  });
+}
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      function () { showToast('链接已复制', 'success'); },
+      function () { showToast('复制失败，请手动选取', 'error'); }
+    );
+  } else {
+    showToast('此浏览器不支持自动复制', 'error');
   }
+}
+
+function refreshIcons() {
+  if (window.lucide) { try { window.lucide.createIcons(); } catch (e) { /* 图标库未加载 */ } }
 }
 
 // ── EVENTS ──
 function attachEvents() {
+  var modeSelect = document.getElementById('uploadMode');
+  var modeHint = document.getElementById('modeHint');
+  var dropHint = document.getElementById('dropHint');
+
+  var MODE_COPY = {
+    direct: '<strong>原图直传</strong>：浏览器把文件直接写进 Blob 存储，不经过函数，所以什么格式都行、不压缩、保留原图，单个文件可到 20MB。',
+    relay: '<strong>压缩中转</strong>：文件先经过边缘函数再入库，边缘函数请求体上限只有 1MB，所以这条只收图片、超过 950KB 会自动压到限内（GIF / SVG 不能压，请改用直传）。好处是一条 <code>curl</code> 就能传图。'
+  };
+
+  function applyMode() {
+    var m = modeSelect ? modeSelect.value : 'direct';
+    if (modeHint) modeHint.innerHTML = MODE_COPY[m];
+    if (dropHint) {
+      dropHint.textContent = m === 'direct'
+        ? '任意格式 · 可多选 · 单个 ≤20MB'
+        : '仅图片 · 可多选 · 超过 950KB 自动压缩';
+    }
+  }
+
+  if (modeSelect) modeSelect.addEventListener('change', applyMode);
+  applyMode();
+
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'uploadInput') {
+      if (e.target.files.length) {
+        uploadFiles(e.target.files, modeSelect ? modeSelect.value : 'direct');
+        e.target.value = '';
+      }
+    }
+  });
+
   var ubtn = document.getElementById('uploadBtn');
-  if (ubtn) ubtn.addEventListener('click', function() {
+  if (ubtn) ubtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
     var inp = document.getElementById('uploadInput');
-    if (inp) uploadFiles(inp.files);
+    if (inp) inp.click();
   });
 
   var rbtn = document.getElementById('refreshListBtn');
-  if (rbtn) rbtn.addEventListener('click', async function() {
-    var b = rbtn;
-    b.disabled = true;
-    var oh = b.innerHTML;
-    b.innerHTML = ICONS.spinner + ' 加载中...';
-    try { await loadFromServer(); }
-    catch(e) { showToast('刷新失败', 'error'); }
-    finally { b.disabled = false; b.innerHTML = oh; }
+  if (rbtn) rbtn.addEventListener('click', function () {
+    rbtn.disabled = true;
+    var oh = rbtn.innerHTML;
+    rbtn.innerHTML = ICONS.spinner + ' 同步中...';
+    syncFromServer().then(function () {
+      rbtn.disabled = false;
+      rbtn.innerHTML = oh;
+    });
   });
 
   var sinp = document.getElementById('searchInput');
-  if (sinp) sinp.addEventListener('input', function(){ renderList(getSavedList()); });
+  if (sinp) sinp.addEventListener('input', function () { renderList(getSavedList()); });
 
   var dz = document.getElementById('dropZone');
   var up = document.getElementById('uploadInput');
-  if (dz && up) {
-    dz.addEventListener('click', function(){ up.click(); });
-    dz.addEventListener('dragover', function(e){ e.preventDefault(); dz.classList.add('drag-over'); });
-    dz.addEventListener('dragleave', function(){ dz.classList.remove('drag-over'); });
-    dz.addEventListener('drop', function(e){ e.preventDefault(); dz.classList.remove('drag-over'); uploadFiles(e.dataTransfer.files); });
-    up.addEventListener('change', function(){ if(up.files.length) uploadFiles(up.files); });
+  if (dz) {
+    dz.addEventListener('click', function () { if (up) up.click(); });
+    dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', function () { dz.classList.remove('drag-over'); });
+    dz.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dz.classList.remove('drag-over');
+      if (e.dataTransfer && e.dataTransfer.files.length) {
+        uploadFiles(e.dataTransfer.files, modeSelect ? modeSelect.value : 'direct');
+      }
+    });
   }
 }
 
 // ── BOOT ──
-(function() {
+(function () {
   var st = document.createElement('style');
   st.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
   document.head.appendChild(st);
 
-  document.addEventListener('DOMContentLoaded', async function() {
+  document.addEventListener('DOMContentLoaded', function () {
     var tb = document.getElementById('themeToggle');
     if (tb) tb.addEventListener('click', toggleTheme);
-    if (window.lucide) { try { lucide.createIcons(); } catch(e){} }
-    var items = await loadFromServer();
-    renderList(items);
+    refreshIcons();
+    if (!document.getElementById('imageList')) return;
+    var cached = getSavedList();
+    updateCounts(cached);
+    renderList(cached);
     attachEvents();
+    syncFromServer();
   });
 })();

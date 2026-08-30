@@ -103,6 +103,21 @@
     .drop-zone-label {
       font-size:0.8rem; color:var(--muted); margin-top:6px; text-align:center;
     }
+    .mode-hint {
+      font-size:0.8rem; line-height:1.7; color:var(--muted);
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-left:3px solid var(--brand);
+      border-radius:8px;
+      padding:10px 14px;
+      margin:0 0 14px;
+    }
+    .mode-hint strong { color:var(--text); }
+    select#uploadMode {
+      background:var(--bg); color:var(--text);
+      border:1px solid var(--border); border-radius:8px;
+    }
+    select#uploadMode:focus { outline:none; border-color:var(--brand); }
     @media(max-width:480px) {
       .image-grid { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
     }
@@ -169,17 +184,17 @@
             <i data-lucide="cloud-upload" class="icon-md"></i>
           </div>
           <div>
-            <div class="stat-num">3</div>
-            <div class="stat-label">上传方式</div>
+            <div class="stat-num">20 MB</div>
+            <div class="stat-label">原图直传上限</div>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon" style="background:rgba(167,139,250,0.12);color:#a78bfa;">
-            <i data-lucide="server" class="icon-md"></i>
+            <i data-lucide="zap" class="icon-md"></i>
           </div>
           <div>
-            <div class="stat-num">EdgeOne</div>
-            <div class="stat-label">存储服务</div>
+            <div class="stat-num">950 KB</div>
+            <div class="stat-label">压缩中转上限</div>
           </div>
         </div>
       </div>
@@ -189,24 +204,37 @@
   <main class="container">
     <!-- Upload Zone -->
     <section class="card" style="margin-bottom:20px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <h3>上传文件</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;">上传文件</h3>
         <div style="display:flex;gap:8px;align-items:center;">
-          <label style="font-size:0.75rem;color:var(--muted);white-space:nowrap;">API 地址：</label>
-          <input type="text" id="apiEndpoint" value="https://yooy.cc.cd" style="width:180px;font-size:0.75rem;" />
+          <label for="uploadMode" style="font-size:0.75rem;color:var(--muted);white-space:nowrap;">方式：</label>
+          <select id="uploadMode" style="width:auto;font-size:0.8rem;padding:6px 10px;">
+            <option value="direct">原图直传（任意格式，≤20MB）</option>
+            <option value="relay">压缩中转（仅图片，超尺寸自动压）</option>
+          </select>
         </div>
       </div>
+
+      <p class="mode-hint" id="modeHint">
+        <strong>原图直传</strong>：浏览器把文件直接写进 Blob 存储，不经过函数，所以什么格式都行、不压缩、保留原图，单个文件可到 20MB。
+      </p>
+
       <div class="drop-zone" id="dropZone">
         <div class="drop-zone-icon">
           <i data-lucide="cloud-upload" class="icon-lg"></i>
         </div>
-        <p><strong>点击或拖拽图片到此处上传</strong></p>
-        <p class="drop-zone-label">支持 JPG / PNG / GIF / WebP，单个文件最大 10MB</p>
+        <p><strong>点击或拖拽文件到此处上传</strong></p>
+        <p class="drop-zone-label" id="dropHint">可多选 · 链接在上传成功后立即显示在下方</p>
         <button type="button" id="uploadBtn" class="button primary" style="margin-top:12px;">
           <i data-lucide="upload" class="icon-sm"></i>
           选择文件上传
         </button>
-        <input type="file" id="uploadInput" accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml" multiple style="display:none" />
+        <input type="file" id="uploadInput" multiple style="display:none" />
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-top:14px;">
+        <label for="apiEndpoint" style="font-size:0.75rem;color:var(--muted);white-space:nowrap;">API 地址（留空=当前域名）：</label>
+        <input type="text" id="apiEndpoint" placeholder="仅在本地调试跨域时填写" style="width:220px;font-size:0.75rem;" />
       </div>
     </section>
 
