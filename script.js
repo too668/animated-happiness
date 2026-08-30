@@ -484,9 +484,9 @@ function attachEvents() {
 
 // ── 密码门禁 ──
 // 密码在后端校验（环境变量 ADMIN_PASSWORD），这里只负责问后端、显隐界面。
-function initGate(onAuthed) {
+function initGate(appId, onAuthed) {
   var gate = document.getElementById('loginGate');
-  var app = document.getElementById('adminApp');
+  var app = document.getElementById(appId);
   if (!gate || !app) { onAuthed(); return; }
 
   var form = document.getElementById('loginForm');
@@ -541,7 +541,6 @@ function initGate(onAuthed) {
   fetch(getApiBase() + '/api/auth-status').then(function (r) { return r.json(); }).then(function (d) {
     if (d && d.ok && d.authed) {
       enter();
-      if (!d.enabled) showToast('未配置 ADMIN_PASSWORD 环境变量，面板当前无保护', 'info');
     } else {
       setTimeout(function () { input.focus(); }, 50);
     }
@@ -561,7 +560,7 @@ function initGate(onAuthed) {
     if (tb) tb.addEventListener('click', toggleTheme);
     refreshIcons();
     if (!document.getElementById('imageList')) return;
-    initGate(function () {
+    initGate('adminApp', function () {
       var cached = getSavedList();
       updateCounts(cached);
       renderList(cached);

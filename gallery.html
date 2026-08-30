@@ -52,7 +52,27 @@
     </div>
   </header>
 
-  <main class="container-wide">
+  <div id="loginGate" class="container" style="padding:80px 20px;">
+    <div class="card" style="max-width:400px;margin:0 auto;padding:32px;text-align:center;">
+      <svg class="wordmark" viewBox="0 0 124 44" role="img" aria-label="YOO" style="width:76px;height:27px;margin-bottom:14px;">
+        <g class="g-y"><path class="stroke wm-y" pathLength="1" d="M7 7Q13 17 21 24M35 7Q29 17 21 24M21 24V37"/></g>
+        <g class="g-o1"><circle class="stroke wm-o1" pathLength="1" cx="60" cy="22" r="15.5"/></g>
+        <g class="g-o2"><path class="stroke wm-o2" pathLength="1" d="M113.7 13.11A15.5 15.5 0 1 1 102.35 6.56"/><circle class="wm-dot" cx="108.75" cy="8.58" r="3"/></g>
+      </svg>
+      <h3 style="margin:0 0 18px;">图库</h3>
+      <form id="loginForm" style="display:flex;flex-direction:column;gap:12px;">
+        <input type="password" id="loginPassword" class="input" placeholder="输入访问密码"
+               autocomplete="current-password" required style="text-align:center;" />
+        <button class="button primary" type="submit" id="loginBtn" style="justify-content:center;">
+          <i data-lucide="lock" class="icon-sm"></i>
+          解锁
+        </button>
+        <p id="loginError" style="display:none;color:var(--danger);font-size:0.8rem;margin:0;"></p>
+      </form>
+    </div>
+  </div>
+
+  <main class="container-wide" id="galleryApp" hidden>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
       <h1 style="margin:0;font-size:1.5rem;display:flex;align-items:center;gap:10px;">
         <i data-lucide="gallery-vertical-end" class="icon-md" style="color:var(--brand);"></i>
@@ -133,7 +153,7 @@
       document.addEventListener('DOMContentLoaded', function () {
         var b = document.getElementById('galleryRefresh');
         if (b) b.addEventListener('click', load);
-        load();
+        initGate('galleryApp', load);
       });
     })();
   </script>
