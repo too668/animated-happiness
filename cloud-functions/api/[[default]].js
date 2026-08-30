@@ -117,7 +117,7 @@ export default async function onRequest(context) {
       );
       const cursor = url.searchParams.get('cursor');
 
-      const store = getStore();
+      const store = getStore('yoo-image-manager');
       const options = { prefix: 'images/', limit };
       if (cursor) options.cursor = cursor;
 
@@ -151,7 +151,7 @@ export default async function onRequest(context) {
         return json({ ok: false, error: 'Invalid key format: must start with "images/"' }, 400);
       }
 
-      const store = getStore();
+      const store = getStore('yoo-image-manager');
       
       // Verify the file exists before deletion
       try {
@@ -202,8 +202,9 @@ export default async function onRequest(context) {
         }, 400);
       }
 
-      // Validate file type
-      if (!isValidImageType(file.type)) {
+      // Validate file type - use file.type for web File objects
+      const ftype = file.type || 'application/octet-stream';
+      if (!isValidImageType(ftype)) {
         return json({ 
           ok: false, 
           error: 'Invalid file type. Allowed: ' + CONFIG.ALLOWED_TYPES.join(', ') 
@@ -211,6 +212,7 @@ export default async function onRequest(context) {
       }
 
       fileBuffer = new Uint8Array(await file.arrayBuffer());
+      // Get filename from web File object
       filename = file.name || `upload-${Date.now()}.png`;
       mimeType = file.type || 'image/png';
     }
@@ -280,7 +282,7 @@ export default async function onRequest(context) {
     const key = generateKey(filename, mimeType);
 
     // Upload to EdgeOne Blob Storage
-    const store = getStore();
+    const store = getStore('yoo-image-manager');
     const presignedUrl = await store.createUploadUrl(key, {
       contentType: mimeType,
       cacheControl: CONFIG.CACHE_CONTROL
