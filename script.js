@@ -541,7 +541,7 @@ function renderKeys(keys) {
     for (var j = 0; j < PERMS_ALL.length; j++) {
       var p = PERMS_ALL[j];
       perms += '<label class="perm-label"><input type="checkbox" data-perm="' + p + '"' +
-        (k.perms.indexOf(p) >= 0 ? ' checked' : '') + ' /> ' + PERM_LABEL[p] + '</label>';
+        (k.perms.indexOf(p) >= 0 ? ' checked' : '') + ' /><span>' + PERM_LABEL[p] + '</span></label>';
     }
     html += '<div class="key-row" data-id="' + esc(k.id) + '">' +
       '<div class="key-info"><strong>' + esc(k.name) + '</strong>' +

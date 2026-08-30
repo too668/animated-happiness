@@ -391,6 +391,10 @@ input[type="email"]:focus, input[type="password"]:focus {
 }
 
 /* ── Table ── */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 table {
   width: 100%;
   border-collapse: collapse;

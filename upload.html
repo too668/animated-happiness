@@ -150,12 +150,33 @@
     .key-info .muted { font-size:0.72rem; }
     .key-row .row-inline { align-items:center; }
     .perm-label {
-      display:inline-flex; align-items:center; gap:4px;
-      font-size:0.78rem; color:var(--text-secondary); cursor:pointer; white-space:nowrap;
+      position:relative; display:inline-flex; cursor:pointer; user-select:none;
     }
-    .perm-label input { accent-color:var(--brand); cursor:pointer; }
+    .perm-label input {
+      position:absolute; opacity:0; width:1px; height:1px; pointer-events:none;
+    }
+    .perm-label span {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:5px 12px; border:1px solid var(--border); border-radius:20px;
+      background:var(--surface); color:var(--text-secondary);
+      font-size:0.78rem; font-weight:500; line-height:1.2;
+      transition:border-color .15s, color .15s, background .15s;
+    }
+    .perm-label span::before {
+      content:''; width:6px; height:6px; border-radius:50%;
+      background:currentColor; opacity:.35; transition:opacity .15s;
+    }
+    .perm-label:hover span { border-color:var(--border-hover); }
+    .perm-label input:checked + span {
+      border-color:var(--brand); color:var(--brand); background:var(--brand-light);
+    }
+    .perm-label input:checked + span::before { opacity:1; }
+    .perm-label input:focus-visible + span { box-shadow:0 0 0 3px var(--brand-light); }
+    .perm-label input:disabled + span { opacity:.55; }
+    #createKeyForm #keyName { flex:1; min-width:160px; max-width:280px; width:auto; }
     @media(max-width:480px) {
       .image-grid { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
+      #createKeyForm #keyName { flex-basis:100%; max-width:none; }
     }
   </style>
 </head>
@@ -359,11 +380,10 @@
       </div>
 
       <form id="createKeyForm" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
-        <input type="text" id="keyName" class="input" placeholder="名称（如：博客图床脚本）"
-               style="flex:1;min-width:160px;max-width:280px;width:auto;" maxlength="40" />
-        <label class="perm-label"><input type="checkbox" id="permUpload" checked /> 上传</label>
-        <label class="perm-label"><input type="checkbox" id="permList" /> 列表</label>
-        <label class="perm-label"><input type="checkbox" id="permDelete" /> 删除</label>
+        <input type="text" id="keyName" class="input" placeholder="名称（如：博客图床脚本）" maxlength="40" />
+        <label class="perm-label"><input type="checkbox" id="permUpload" checked /><span>上传</span></label>
+        <label class="perm-label"><input type="checkbox" id="permList" /><span>列表</span></label>
+        <label class="perm-label"><input type="checkbox" id="permDelete" /><span>删除</span></label>
         <button class="button primary" type="submit" id="createKeyBtn">
           <i data-lucide="plus" class="icon-sm"></i> 创建密钥
         </button>

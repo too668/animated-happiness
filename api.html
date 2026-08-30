@@ -90,6 +90,7 @@
         <pre><code>curl -H "Authorization: Bearer yoo_xxxxxxxxxxxxxxxxxxxxxxxx" "https://yooy.cc.cd/api/list"
 curl "https://yooy.cc.cd/api/list?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
         <h3>权限对照</h3>
+        <div class="table-wrap">
         <table style="margin-bottom:16px;">
           <thead><tr><th>接口</th><th>所需权限</th></tr></thead>
           <tbody>
@@ -99,6 +100,7 @@ curl "https://yooy.cc.cd/api/list?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
             <tr><td><code>/api/keys</code>（创建 / 改权限 / 吊销）</td><td>仅管理员 Cookie</td></tr>
           </tbody>
         </table>
+        </div>
         <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
           <li>不带凭证返回 <code>401</code>，权限不足返回 <code>403</code></li>
           <li><code>GET /i/&lt;key&gt;</code> 图片直链、<code>/api/health</code>、登录相关接口保持公开</li>
@@ -206,6 +208,7 @@ curl "https://yooy.cc.cd/api/list?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
         <p style="color:var(--muted);margin:0 0 16px;">获取所有图片列表，支持分页参数。</p>
 
         <h3>请求参数</h3>
+        <div class="table-wrap">
         <table style="margin-bottom:16px;">
           <thead>
             <tr><th>参数</th><th>类型</th><th>默认值</th><th>说明</th></tr>
@@ -217,6 +220,7 @@ curl "https://yooy.cc.cd/api/list?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
             <tr><td><code>all</code></td><td>1</td><td>-</td><td>不限数量，由 SDK 自动聚合所有页</td></tr>
           </tbody>
         </table>
+        </div>
 
         <h3>示例请求</h3>
         <pre><code>curl -H "Authorization: Bearer yoo_..." "https://yooy.cc.cd/api/list?limit=20"</code></pre>
@@ -282,6 +286,7 @@ curl "https://yooy.cc.cd/api/list?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
         <p style="color:var(--muted);margin:0 0 16px;">删除对象。可以用 <code>key</code>，也可以直接粘 <code>/i/</code> 完整链接给 <code>url</code>（实测两种都通）。</p>
 
         <h3>请求参数</h3>
+        <div class="table-wrap">
         <table style="margin-bottom:16px;">
           <thead>
             <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
@@ -291,6 +296,7 @@ curl "https://yooy.cc.cd/api/list?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
             <tr><td><code>url</code></td><td>string</td><td>二选一</td><td>图片完整链接，服务端会反解出 key</td></tr>
           </tbody>
         </table>
+        </div>
 
         <h3>示例请求</h3>
         <pre><code>curl -X DELETE -H "Authorization: Bearer yoo_..." "https://yooy.cc.cd/api/delete?key=2026/08/6f20444f3562-demo.png"
