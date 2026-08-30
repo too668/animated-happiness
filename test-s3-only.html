@@ -101,8 +101,8 @@
       headers['x-amz-date'] = datetime;
       headers['x-amz-content-sha256'] = payloadHash;
 
-      const host = new URL(url).host;
-      headers['host'] = host;
+      const urlObj = new URL(url);
+      headers['host'] = urlObj.host;
 
       const signedHeaders = Object.keys(headers)
         .map(k => k.toLowerCase())
@@ -115,10 +115,14 @@
         .map(k => `${k}:${headers[Object.keys(headers).find(key => key.toLowerCase() === k)].trim()}`)
         .join('\n') + '\n';
 
+      // AWS SigV4: canonical URI 需要对每段路径单独编码
+      const canonicalUri = urlObj.pathname.split('/').map(encodeURIComponent).join('/');
+      const canonicalQuerystring = urlObj.search.slice(1).split('&').sort().join('&');
+
       const canonicalRequest = [
         method,
-        new URL(url).pathname,
-        new URL(url).search.slice(1),
+        canonicalUri,
+        canonicalQuerystring,
         canonicalHeaders,
         signedHeaders,
         payloadHash
@@ -155,13 +159,18 @@
       urlObj.searchParams.set('X-Amz-Expires', expiresSeconds.toString());
       urlObj.searchParams.set('X-Amz-SignedHeaders', 'host');
 
+      // AWS SigV4: canonical URI 需要对每段路径单独编码
+      const canonicalUri = urlObj.pathname.split('/').map(encodeURIComponent).join('/');
+      // Canonical querystring: 按键排序，键值都要编码
+      const canonicalQuerystring = Array.from(urlObj.searchParams.entries())
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .sort()
+        .join('&');
+
       const canonicalRequest = [
         method,
-        urlObj.pathname,
-        Array.from(urlObj.searchParams.entries())
-          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-          .sort()
-          .join('&'),
+        canonicalUri,
+        canonicalQuerystring,
         `host:${urlObj.host}\n`,
         'host',
         'UNSIGNED-PAYLOAD'
