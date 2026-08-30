@@ -7,8 +7,30 @@ import { getStore } from '@edgeone/pages-blob';
 
 const STORE_NAME = 'yoo-images';
 
+// iDrive e2 S3 配置（纯 HTTP/SigV4）
+const IDRIVE_ENDPOINT = 'https://s3.ap-northeast-1.idrivee2.com';
+const IDRIVE_REGION = 'ap-northeast-1';
+let s3Configured = false;
+const envVarsGlobal = globalThis.env || {};
+
+function envVar(context, name) {
+  const envVars = (context && context.env) || envVarsGlobal;
+  const v = envVars[name];
+  return typeof v === 'string' && v.trim() ? v.trim() : '';
+}
+
+// 检查 S3 是否配置
+if (envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET')) {
+  const accessKeyId = envVar({ env: envVarsGlobal }, 'IDRIVE_ACCESS_KEY_ID');
+  const secretAccessKey = envVar({ env: envVarsGlobal }, 'IDRIVE_SECRET_ACCESS_KEY');
+  if (accessKeyId && secretAccessKey) {
+    s3Configured = true;
+  }
+}
+
 const RELAY_MAX_BYTES = 950 * 1024; // Edge 请求体上限 1MB，留出余量
 const DIRECT_MAX_BYTES = 20 * 1024 * 1024; // Blob 单值上限 25MB
+const S3_MAX_BYTES = 5 * 1024 * 1024 * 1024; // S3 单值上限 5GB
 const UPLOAD_URL_TTL = 600;
 const LIST_DEFAULT_LIMIT = 100;
 const LIST_MAX_LIMIT = 500;
@@ -519,8 +541,13 @@ export async function onRequest(context) {
 
       const name = String(body.filename || body.name || 'file').split(/[\\/]/).pop();
       const size = Number(body.size);
-      if (Number.isFinite(size) && size > DIRECT_MAX_BYTES) {
-        return fail(`文件过大，直传上限 ${Math.floor(DIRECT_MAX_BYTES / 1024 / 1024)}MB`);
+      
+      // 解析 storage 参数（blob | s3）
+      const storageParam = url.searchParams.get('storage') || 'blob';
+      const maxBytes = storageParam === 's3' ? S3_MAX_BYTES : DIRECT_MAX_BYTES;
+      
+      if (Number.isFinite(size) && size > maxBytes) {
+        return fail(`文件过大，${storageParam === 's3' ? 'S3' : '直传'}上限 ${Math.floor(maxBytes / 1024 / 1024)}MB`);
       }
 
       const contentType =
@@ -528,22 +555,33 @@ export async function onRequest(context) {
           ? body.contentType
           : 'application/octet-stream';
 
-      const key = buildKey(name);
-      // createUploadUrl 会把 Content-Type 签进地址，客户端 PUT 时必须原样带回，否则 403
-      const signed = await control.createUploadUrl(key, {
-        expireSeconds: UPLOAD_URL_TTL,
-        contentType
-      });
+      if (storageParam === 's3') {
+        // S3 直传模式
+        return json({
+          ok: true,
+          error: 'iDrive e2 S3 直传功能待实现',
+          storage: 's3'
+        });
+      } else {
+        // Blob 直传模式（默认）
+        const key = buildKey(name);
+        // createUploadUrl 会把 Content-Type 签进地址，客户端 PUT 时必须原样带回，否则 403
+        const signed = await control.createUploadUrl(key, {
+          expireSeconds: UPLOAD_URL_TTL,
+          contentType
+        });
 
-      return json({
-        ok: true,
-        key,
-        url: publicUrl(origin, key),
-        uploadUrl: signed.url,
-        expiresAt: signed.expiresAt,
-        contentType,
-        method: 'PUT'
-      });
+        return json({
+          ok: true,
+          key,
+          url: publicUrl(origin, key),
+          uploadUrl: signed.url,
+          expiresAt: signed.expiresAt,
+          contentType,
+          method: 'PUT',
+          storage: 'blob'
+        });
+      }
     }
 
     // ── PUT|POST /api/upload ───────────────────────────────────────
@@ -581,42 +619,55 @@ export async function onRequest(context) {
       }
 
       if (!bytes || bytes.byteLength === 0) return fail('文件内容为空');
-      if (bytes.byteLength > RELAY_MAX_BYTES) {
-        return fail(
-          `中转上限 ${Math.floor(RELAY_MAX_BYTES / 1024)}KB（Edge 请求体 1MB），` +
-          '更大的文件请用 POST /api/upload-url 直传',
-          413
-        );
+      
+      // 解析 storage 参数（blob | s3）
+      const storageParam = url.searchParams.get('storage') || 'blob';
+      
+      if (storageParam === 's3') {
+        if (bytes.byteLength > S3_MAX_BYTES) {
+          return fail(`S3 中转上限 ${Math.floor(S3_MAX_BYTES / 1024 / 1024)}MB`, 413);
+        }
+        return json({ ok: false, error: 'iDrive e2 S3 中转功能待实现', storage: 's3' });
+      } else {
+        // Blob 中转模式（默认）
+        if (bytes.byteLength > RELAY_MAX_BYTES) {
+          return fail(
+            `中转上限 ${Math.floor(RELAY_MAX_BYTES / 1024)}KB（Edge 请求体 1MB），` +
+            '更大的文件请用 POST /api/upload-url 直传',
+            413
+          );
+        }
+
+        const ext = extOf(name);
+        let contentType = IMAGE_TYPES[ext];
+        if (!contentType) {
+          const headerMime = (declaredType.split(';')[0] || '').trim().toLowerCase();
+          if (Object.values(IMAGE_TYPES).includes(headerMime)) contentType = headerMime;
+        }
+        if (!contentType) {
+          return fail('中转仅接受图片：' + Object.keys(IMAGE_TYPES).join(' '));
+        }
+
+        const finalName = name || `image${ext || extFromMime(contentType)}`;
+        const key = buildKey(finalName);
+
+        // 只能存字节；Content-Type 由 serve 路由按扩展名推导。
+        // cacheControl 与 /i/ 路由保持一致（1 小时）：目前出图以路由头为准，
+        // 但对象上留个一年值是个地雷，哪天改成透传元信息就会复活「删了还能看一年」。
+        await control.set(key, bytes, {
+          cacheControl: 'public, max-age=3600'
+        });
+
+        return json({
+          ok: true,
+          key,
+          url: publicUrl(origin, key),
+          size: bytes.byteLength,
+          contentType,
+          name: key.split('/').pop(),
+          storage: 'blob'
+        });
       }
-
-      const ext = extOf(name);
-      let contentType = IMAGE_TYPES[ext];
-      if (!contentType) {
-        const headerMime = (declaredType.split(';')[0] || '').trim().toLowerCase();
-        if (Object.values(IMAGE_TYPES).includes(headerMime)) contentType = headerMime;
-      }
-      if (!contentType) {
-        return fail('中转仅接受图片：' + Object.keys(IMAGE_TYPES).join(' '));
-      }
-
-      const finalName = name || `image${ext || extFromMime(contentType)}`;
-      const key = buildKey(finalName);
-
-      // 只能存字节；Content-Type 由 serve 路由按扩展名推导。
-      // cacheControl 与 /i/ 路由保持一致（1 小时）：目前出图以路由头为准，
-      // 但对象上留个一年值是个地雷，哪天改成透传元信息就会复活「删了还能看一年」。
-      await control.set(key, bytes, {
-        cacheControl: 'public, max-age=3600'
-      });
-
-      return json({
-        ok: true,
-        key,
-        url: publicUrl(origin, key),
-        size: bytes.byteLength,
-        contentType,
-        name: key.split('/').pop()
-      });
     }
 
     // ── DELETE /api/delete ─────────────────────────────────────────
