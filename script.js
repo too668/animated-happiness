@@ -73,11 +73,9 @@ function humanSize(n) {
   return (n / 1024 / 1024).toFixed(2) + ' MB';
 }
 
-// API 基址默认跟随当前来源，预览域名和本地调试都能用
+// 前端和 API 同源部署，接口地址就跟着当前来源走
 function getApiBase() {
-  var el = document.getElementById('apiEndpoint');
-  var v = el ? el.value.trim() : '';
-  return v || location.origin;
+  return location.origin;
 }
 
 function getAliases() {
