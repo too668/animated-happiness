@@ -99,8 +99,14 @@
   --data-binary @photo.heic
 # → HTTP 200，文件已在存储里，url 立即可用</code></pre>
         <p style="color:var(--muted);font-size:0.85rem;margin-bottom:0;">
-          签名地址绑死了 PUT 方法、这个 key、600 秒有效期、以及 Content-Type——四样任何一样对不上都是 403。所以第二步的 <code>Content-Type</code> 必须和第一步申报的完全一致。<code>url</code> 在 PUT 成功前就已返回，但那时访问会 404。
+          签名地址绑死了 PUT 方法、这个 key、600 秒有效期、以及 Content-Type——四样任何一样对不上，写入都不会成功，存储里也不会留下半个对象（<code>GET /api/meta</code> 仍报 404）。
         </p>
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-top:14px;padding-top:14px;border-top:1px dashed var(--border);">
+          <i data-lucide="alert-circle" class="icon-sm" style="color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+          <p style="color:var(--muted);font-size:0.85rem;margin:0;line-height:1.75;">
+            但别指望能读到一个干净的 403。实测：拿 <code>uploadUrl</code> 去 <code>GET</code> 会正常返回 403 <code>SignatureDoesNotMatch</code>；而<strong style="color:var(--text);">任何被拒的写</strong>（Content-Type 不符、方法不是 PUT、签名被改）都会被存储网关直接掐断连接——HTTP/2 下表现为 stream <code>INTERNAL_ERROR</code>，curl 记成状态码 <code>000</code>，浏览器里就是一个 <code>Failed to fetch</code>。所以自行接入时，<strong style="color:var(--text);">第二步的 Content-Type 必须原样回传第一步响应里的 <code>contentType</code></strong>（不是你自己猜的 <code>file.type</code>），并在客户端把「连接被重置」也当成上传失败来处理、必要时重新签发地址。<code>url</code> 在 PUT 成功前就已返回，但那时访问会 404。
+          </p>
+        </div>
       </div>
 
       <!-- 中转 -->

@@ -158,11 +158,16 @@ function uploadDirect(file) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: file.name, size: file.size, contentType: contentType })
   }).then(function (signed) {
-    // 签名把 Content-Type 也签进去了，PUT 时必须原样带回，否则 403
+    // Content-Type 被签进了地址，必须原样回传。注意：被拒的写不会给可读的 403，
+    // 存储网关直接掐断连接，fetch 是以 TypeError('Failed to fetch') 拒绝的。
     return fetch(signed.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': signed.contentType || contentType } })
       .then(function (r) {
         if (!r.ok) return r.text().then(function (t) { throw new Error('直传写入失败 HTTP ' + r.status + (t ? ' · ' + t.slice(0, 80) : '')); });
         return { key: signed.key, url: signed.url, name: file.name, size: file.size, mode: '直传' };
+      })
+      .catch(function (e) {
+        if (e instanceof TypeError) throw new Error('直传连接被中断，文件未上传成功。请重试，或改用「压缩中转」模式');
+        throw e;
       });
   });
 }

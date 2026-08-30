@@ -132,7 +132,8 @@ curl https://yooy.cc.cd/api/health
 | `store.head(key)` | 不存在，真实方法是 `getMetadata()`。这个 bug 会让删除对任何文件都返回 404 |
 | `store.list({ limit, cursor })` | 默认 `paginate: true` 时自动聚合全部页且**不返回 cursor**，分页永远是假的。必须显式 `paginate: false` |
 | 从 `list()` 结果里读 `size` | `BlobInfo` 只有 `{ key, etag }`。要大小只能逐项 `getMetadata()`（即 `?detail=1`） |
-| 用默认句柄查「文件还在不在」 | 默认是最终一致的读（走边缘缓存），实测对象已删除后 `getMetadata()` 仍会返回旧元信息，谎报存在。判存在必须用 `getStore({ name, consistency: 'strong' })` |
-| 给图片响应打 `max-age=31536000, immutable` | 边缘节点会缓存一年，于是**删掉的图还能继续访问一年**。现值 `max-age=3600` + `stale-while-revalidate=86400`，删除一小时内可见效 |
+| 用默认句柄查「文件还在不在」 | 默认是 `eventual`（最终一致）的读，SDK 文档说明这类读可能给出不新鲜的结果。判存在统一走 `getStore({ name, consistency: 'strong' })`，宁可多花一次强一致读也不谎报存在 |
+| 给图片响应打 `max-age=31536000, immutable` | 边缘节点会缓存一年，于是**删掉的图还能继续访问一年**。实测删除一个被反复请求过的链接：后续 6 次请求全部仍返回 200（边缘副本），而 `/api/meta` 已经是 404（源站真的删掉了）。现值改为 `max-age=3600` + `stale-while-revalidate=86400`，把这段不一致窗口从一年压到一小时 |
+| 以为签名直传失败能拿到 403 | 拿 `uploadUrl` 去 `GET` 确实有干净的 403 `SignatureDoesNotMatch`；但**被拒的写**（Content-Type 与签名不符 / 方法不是 PUT / 签名被动过）会被存储网关直接掐断连接：HTTP/2 下是 stream `INTERNAL_ERROR`，curl 记 `000`。不变量是「写入没成功、存储里不留痕」，但错误信号是连接级别的，客户端要按失败处理并重签 |
 
 另有一条平台注意事项：平台的默认预览域名有内容合规限制（预览链接 3 小时过期、大陆访问可能 401），所以这个站点绑了自定义域名。
