@@ -81,6 +81,8 @@ const STORE_NAME = 'yoo-images';   // edge-functions/api/[[default]].js
 const STORE_NAME = 'yoo-images';   // edge-functions/i/[[default]].js
 ```
 
+API key 记录存在第二个桶 `yoo-keys`（强一致句柄，吊销立即生效），同样首写自动建；记录只存 sha256 哈希，密钥明文不落库。
+
 存储桶**不需要预先创建**，`getStore()` 首次写入时自动建（已实测：`/api/health` 对新桶名返回 `storage.ok: true`）。
 
 函数内部 `getStore()` 自动鉴权，**不需要 API token**。只有从 EdgeOne 之外访问存储时才需要 `projectId` + token。
@@ -90,6 +92,8 @@ const STORE_NAME = 'yoo-images';   // edge-functions/i/[[default]].js
 ## API
 
 全部返回 JSON（除 `/i/`），字段含义与 curl 示例见 `/api.html`，那里每条都实测过。
+
+数据接口（upload / upload-url / list / meta / delete）需**管理员 Cookie 或 API key**：key 在管理后台「API Keys」卡片签发，带 upload / list / delete 三种权限，`Authorization: Bearer yoo_...` 或 `?key=` 携带；不带凭证 401、权限不足 403。`/i/<key>` 直链与 `/api/health` 保持公开。
 
 ```txt
 POST   /api/upload-url   直传第一步：换取签名 PUT 地址     ≤20MB · 任意格式
