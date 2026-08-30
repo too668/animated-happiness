@@ -251,7 +251,9 @@
 
       try {
         const key = `${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/${Date.now()}-${file.name}`;
-        const url = `${s3Config.endpoint}/${s3Config.bucket}/${key}`;
+        // Virtual-hosted 格式：bucket 在子域名，路径只有 key
+        const host = new URL(s3Config.endpoint).host;
+        const url = `${s3Config.endpoint.replace('://', `://${s3Config.bucket}.`)}/${key}`;
         
         const signedUrl = await presignUrl('PUT', url, s3Config, 3600);
         result.textContent = `签名 URL 已生成，正在上传...\n${signedUrl.slice(0, 100)}...`;
@@ -281,7 +283,8 @@
       result.className = '';
 
       try {
-        const url = `${s3Config.endpoint}/${s3Config.bucket}?list-type=2&max-keys=10`;
+        // Virtual-hosted 格式：bucket 在子域名
+        const url = `${s3Config.endpoint.replace('://', `://${s3Config.bucket}.`)}?list-type=2&max-keys=10`;
         const headers = await signRequest('GET', url, {}, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', s3Config);
 
         const response = await fetch(url, { method: 'GET', headers });
