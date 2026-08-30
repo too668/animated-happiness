@@ -283,10 +283,12 @@ export default async function onRequest(context) {
 
     // Upload to EdgeOne Blob Storage
     const store = getStore('functions-test');
+    console.error('[upload] Before createUploadUrl:', {key, mimeType});
     const presignedUrl = await store.createUploadUrl(key, {
       contentType: mimeType,
       expireSeconds: 3600
     });
+    console.error('[upload] Presigned URL:', presignedUrl.url?.substring(0, 100));
 
     const uploadRes = await fetch(presignedUrl, {
       method: 'PUT',
