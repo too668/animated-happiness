@@ -86,6 +86,13 @@
       return d.toISOString().slice(0, 19).replace(/[-:]/g, '') + 'Z';
     }
 
+    // AWS SigV4 URI 编码：只保留 A-Z a-z 0-9 - _ . ~，其余全部编码
+    function awsUriEncode(str) {
+      return encodeURIComponent(str).replace(/[!*'()]/g, c =>
+        '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
+      );
+    }
+
     async function getSigningKey(secretKey, date, region, service) {
       const kDate = await hmac(encoder.encode('AWS4' + secretKey), date);
       const kRegion = await hmac(kDate, region);
@@ -93,35 +100,72 @@
       return hmac(kService, 'aws4_request');
     }
 
-    async function signRequest(method, url, headers, payloadHash, config) {
+    async function presignUrl(method, pathname, host, config, expiresSeconds = 3600) {
       const d = new Date();
       const date = ymd(d);
       const datetime = ymdhms(d);
-      
-      headers['x-amz-date'] = datetime;
-      headers['x-amz-content-sha256'] = payloadHash;
+      const credentialScope = `${date}/${config.region}/s3/aws4_request`;
+      const credential = `${config.accessKey}/${credentialScope}`;
 
-      const urlObj = new URL(url);
-      headers['host'] = urlObj.host;
+      // 手动构建查询参数（避免 URL API 的编码不一致问题）
+      const params = [
+        ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
+        ['X-Amz-Credential', credential],
+        ['X-Amz-Date', datetime],
+        ['X-Amz-Expires', String(expiresSeconds)],
+        ['X-Amz-SignedHeaders', 'host']
+      ];
 
-      const signedHeaders = Object.keys(headers)
-        .map(k => k.toLowerCase())
-        .sort()
-        .join(';');
-
-      const canonicalHeaders = Object.keys(headers)
-        .map(k => k.toLowerCase())
-        .sort()
-        .map(k => `${k}:${headers[Object.keys(headers).find(key => key.toLowerCase() === k)].trim()}`)
-        .join('\n') + '\n';
-
-      const canonicalUri = urlObj.pathname;
-      const canonicalQuerystring = urlObj.search.slice(1);
+      // Canonical querystring: 按键排序，用 awsUriEncode 编码
+      const canonicalQuerystring = params
+        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([k, v]) => `${awsUriEncode(k)}=${awsUriEncode(v)}`)
+        .join('&');
 
       const canonicalRequest = [
         method,
-        canonicalUri,
+        pathname,
         canonicalQuerystring,
+        `host:${host}\n`,
+        'host',
+        'UNSIGNED-PAYLOAD'
+      ].join('\n');
+
+      const stringToSign = [
+        'AWS4-HMAC-SHA256',
+        datetime,
+        credentialScope,
+        hex(await hash(canonicalRequest))
+      ].join('\n');
+
+      const signingKey = await getSigningKey(config.secretKey, date, config.region, 's3');
+      const signature = hex(await hmac(signingKey, stringToSign));
+
+      const finalQuery = canonicalQuerystring + `&X-Amz-Signature=${signature}`;
+      return `https://${host}${pathname}?${finalQuery}`;
+    }
+
+    async function signRequest(method, urlStr, extraHeaders, payloadHash, config) {
+      const d = new Date();
+      const date = ymd(d);
+      const datetime = ymdhms(d);
+      const urlObj = new URL(urlStr);
+
+      const headers = { ...extraHeaders };
+      headers['x-amz-date'] = datetime;
+      headers['x-amz-content-sha256'] = payloadHash;
+      headers['host'] = urlObj.host;
+
+      const sortedKeys = Object.keys(headers).map(k => k.toLowerCase()).sort();
+      const signedHeaders = sortedKeys.join(';');
+      const canonicalHeaders = sortedKeys
+        .map(k => `${k}:${headers[Object.keys(headers).find(key => key.toLowerCase() === k)].trim()}`)
+        .join('\n') + '\n';
+
+      const canonicalRequest = [
+        method,
+        urlObj.pathname,
+        urlObj.search.slice(1),
         canonicalHeaders,
         signedHeaders,
         payloadHash
@@ -142,50 +186,6 @@
         ...headers,
         'Authorization': `AWS4-HMAC-SHA256 Credential=${config.accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
       };
-    }
-
-    async function presignUrl(method, url, config, expiresSeconds = 3600) {
-      const d = new Date();
-      const date = ymd(d);
-      const datetime = ymdhms(d);
-      const credentialScope = `${date}/${config.region}/s3/aws4_request`;
-      const credential = `${config.accessKey}/${credentialScope}`;
-
-      const urlObj = new URL(url);
-      urlObj.searchParams.set('X-Amz-Algorithm', 'AWS4-HMAC-SHA256');
-      urlObj.searchParams.set('X-Amz-Credential', credential);
-      urlObj.searchParams.set('X-Amz-Date', datetime);
-      urlObj.searchParams.set('X-Amz-Expires', expiresSeconds.toString());
-      urlObj.searchParams.set('X-Amz-SignedHeaders', 'host');
-
-      const canonicalUri = urlObj.pathname;
-      // Canonical querystring: 按键排序，键值都要编码
-      const canonicalQuerystring = Array.from(urlObj.searchParams.entries())
-        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
-        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-        .join('&');
-
-      const canonicalRequest = [
-        method,
-        canonicalUri,
-        canonicalQuerystring,
-        `host:${urlObj.host}\n`,
-        'host',
-        'UNSIGNED-PAYLOAD'
-      ].join('\n');
-
-      const stringToSign = [
-        'AWS4-HMAC-SHA256',
-        datetime,
-        credentialScope,
-        hex(await hash(canonicalRequest))
-      ].join('\n');
-
-      const signingKey = await getSigningKey(config.secretKey, date, config.region, 's3');
-      const signature = hex(await hmac(signingKey, stringToSign));
-
-      urlObj.searchParams.set('X-Amz-Signature', signature);
-      return urlObj.toString();
     }
 
     // 配置管理
@@ -236,6 +236,11 @@
       }
     }
 
+    function getHost() {
+      const endpointHost = new URL(s3Config.endpoint).host;
+      return `${s3Config.bucket}.${endpointHost}`;
+    }
+
     async function uploadFile() {
       const file = document.getElementById('fileInput').files[0];
       if (!file) {
@@ -248,13 +253,15 @@
       result.className = '';
 
       try {
-        const rawKey = `${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/${Date.now()}-${file.name}`;
-        const key = rawKey.split('/').map(encodeURIComponent).join('/');
-        // Virtual-hosted 格式：bucket 在子域名，路径只有 key
-        const url = `${s3Config.endpoint.replace('://', `://${s3Config.bucket}.`)}/${key}`;
-        
-        const signedUrl = await presignUrl('PUT', url, s3Config, 3600);
-        result.textContent = `签名 URL 已生成，正在上传...\n${signedUrl.slice(0, 100)}...`;
+        // 用纯 ASCII key 避免所有编码问题，扩展名保留以便识别
+        const ext = file.name.slice(file.name.lastIndexOf('.'));
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const key = `uploads/${new Date().toISOString().slice(0, 10).replace(/-/g, '/')}/${Date.now()}-${safeName}`;
+        const pathname = '/' + key;
+        const host = getHost();
+
+        const signedUrl = await presignUrl('PUT', pathname, host, s3Config, 3600);
+        result.textContent = `签名 URL:\n${signedUrl.slice(0, 150)}...\n\n正在上传...`;
 
         const response = await fetch(signedUrl, {
           method: 'PUT',
@@ -265,7 +272,7 @@
         });
 
         if (response.ok) {
-          result.innerHTML = `<span class="success">✓ 上传成功！</span>\n\nKey: ${key}\nURL: ${url}\n大小: ${file.size} 字节`;
+          result.innerHTML = `<span class="success">✓ 上传成功！</span>\n\nKey: ${key}\n大小: ${file.size} 字节`;
         } else {
           const text = await response.text();
           result.innerHTML = `<span class="error">✗ 上传失败 (${response.status})</span>\n\n${text}`;
@@ -281,8 +288,8 @@
       result.className = '';
 
       try {
-        // Virtual-hosted 格式：bucket 在子域名
-        const url = `${s3Config.endpoint.replace('://', `://${s3Config.bucket}.`)}?list-type=2&max-keys=10`;
+        const host = getHost();
+        const url = `https://${host}/?list-type=2&max-keys=10`;
         const headers = await signRequest('GET', url, {}, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', s3Config);
 
         const response = await fetch(url, { method: 'GET', headers });
