@@ -9,3 +9,9 @@ node_modules/
 .env
 .env.local
 *.log
+
+# EdgeOne CLI cache
+.edgeone/
+
+# Bun cache
+.bun/

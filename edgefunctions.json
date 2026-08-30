@@ -1,0 +1,14 @@
+{
+  "functions": [
+    {
+      "path": "/api/*",
+      "runtime": "nodejs-bun",
+      "entrypoint": "./edge-functions/api/[[default]].js"
+    },
+    {
+      "path": "/i/*",
+      "runtime": "nodejs-bun",
+      "entrypoint": "./edge-functions/i/[[default]].js"
+    }
+  ]
+}
