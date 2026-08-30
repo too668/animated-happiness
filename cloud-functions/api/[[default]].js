@@ -126,9 +126,7 @@ export default async function onRequest(context) {
       const items = (result.blobs || []).map(blob => ({
         key: blob.key,
         url: `${CONFIG.BASE_URL}/${blob.key}`,
-        size: blob.size || 0,
-        contentType: blob.contentType || 'application/octet-stream',
-        uploadedAt: blob.uploadedAt || new Date().toISOString()
+        etag: blob.etag || ''
       }));
 
       return json({
