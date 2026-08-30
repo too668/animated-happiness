@@ -117,7 +117,7 @@ export default async function onRequest(context) {
       );
       const cursor = url.searchParams.get('cursor');
 
-      const store = getStore('yoo-image-manager');
+      const store = getStore('functions-test');
       const options = { prefix: 'images/', limit };
       if (cursor) options.cursor = cursor;
 
@@ -151,7 +151,7 @@ export default async function onRequest(context) {
         return json({ ok: false, error: 'Invalid key format: must start with "images/"' }, 400);
       }
 
-      const store = getStore('yoo-image-manager');
+      const store = getStore('functions-test');
       
       // Verify the file exists before deletion
       try {
@@ -282,10 +282,10 @@ export default async function onRequest(context) {
     const key = generateKey(filename, mimeType);
 
     // Upload to EdgeOne Blob Storage
-    const store = getStore('yoo-image-manager');
+    const store = getStore('functions-test');
     const presignedUrl = await store.createUploadUrl(key, {
       contentType: mimeType,
-      cacheControl: CONFIG.CACHE_CONTROL
+      expireSeconds: 3600
     });
 
     const uploadRes = await fetch(presignedUrl, {
