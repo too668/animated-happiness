@@ -123,6 +123,24 @@
       border:1px solid var(--border); border-radius:8px;
     }
     select#uploadMode:focus { outline:none; border-color:var(--brand); }
+    .admin-tabs {
+      display:flex; gap:4px; flex-wrap:wrap;
+      border-bottom:1px solid var(--border);
+      margin:24px 0 20px;
+    }
+    .admin-tab {
+      appearance:none; background:transparent;
+      border:none; border-bottom:2px solid transparent;
+      padding:10px 16px; margin-bottom:-1px;
+      display:inline-flex; align-items:center; gap:7px;
+      color:var(--muted); font-size:0.9rem; font-weight:600;
+      font-family:inherit; cursor:pointer;
+      transition:color 0.15s, border-color 0.15s;
+    }
+    .admin-tab:hover { color:var(--text); }
+    .admin-tab.active { color:var(--brand); border-bottom-color:var(--brand); }
+    .admin-panel.hidden { display:none; }
+    .hidden { display:none !important; }
     .key-row {
       display:flex; justify-content:space-between; align-items:center; gap:10px;
       flex-wrap:wrap; padding:10px 12px; margin-bottom:8px;
@@ -207,44 +225,65 @@
   <!-- ── Admin Header ── -->
   <div class="admin-header">
     <div class="container">
-      <h1 style="display:flex;align-items:center;gap:10px;">
-        <i data-lucide="images" class="icon-md" style="color:var(--brand);"></i>
-        图片管理
-      </h1>
-      <p>拖拽上传图片，管理你的图片资源，获取公开访问 URL。</p>
-      <div class="stats-row">
-        <div class="stat-card">
-          <div class="stat-icon" style="background:rgba(64,158,255,0.12);color:var(--brand);">
-            <i data-lucide="image" class="icon-md"></i>
-          </div>
-          <div>
-            <div class="stat-num" id="totalCount">0</div>
-            <div class="stat-label">图片总数</div>
-          </div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h1 style="display:flex;align-items:center;gap:10px;">
+            <i data-lucide="layout-dashboard" class="icon-md" style="color:var(--brand);"></i>
+            管理后台
+          </h1>
+          <p style="margin-bottom:0;">上传图片、管理图库资源、签发 API 密钥。</p>
         </div>
-        <div class="stat-card">
-          <div class="stat-icon" style="background:rgba(45,212,191,0.12);color:#2dd4bf;">
-            <i data-lucide="hard-drive-upload" class="icon-md"></i>
-          </div>
-          <div>
-            <div class="stat-num">20 MB</div>
-            <div class="stat-label">原图直传上限</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon" style="background:rgba(167,139,250,0.12);color:#a78bfa;">
-            <i data-lucide="zap" class="icon-md"></i>
-          </div>
-          <div>
-            <div class="stat-num">950 KB</div>
-            <div class="stat-label">压缩中转上限</div>
-          </div>
-        </div>
+        <button id="logoutBtn" class="button secondary" type="button" title="退出登录">
+          <i data-lucide="log-out" class="icon-sm"></i>
+          退出
+        </button>
       </div>
     </div>
   </div>
 
   <main class="container">
+    <!-- ── Tabs ── -->
+    <div class="admin-tabs" role="tablist">
+      <button class="admin-tab active" id="tab-images" data-tab="images" type="button" role="tab" aria-selected="true">
+        <i data-lucide="images" class="icon-sm"></i> 图片管理
+      </button>
+      <button class="admin-tab" id="tab-keys" data-tab="keys" type="button" role="tab" aria-selected="false">
+        <i data-lucide="key-round" class="icon-sm"></i> API Keys
+      </button>
+    </div>
+
+    <!-- ── Panel: 图片管理 ── -->
+    <div class="admin-panel" id="panel-images" role="tabpanel">
+    <div class="stats-row" style="margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(64,158,255,0.12);color:var(--brand);">
+          <i data-lucide="image" class="icon-md"></i>
+        </div>
+        <div>
+          <div class="stat-num" id="totalCount">0</div>
+          <div class="stat-label">图片总数</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(45,212,191,0.12);color:#2dd4bf;">
+          <i data-lucide="hard-drive-upload" class="icon-md"></i>
+        </div>
+        <div>
+          <div class="stat-num">20 MB</div>
+          <div class="stat-label">原图直传上限</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(167,139,250,0.12);color:#a78bfa;">
+          <i data-lucide="zap" class="icon-md"></i>
+        </div>
+        <div>
+          <div class="stat-num">950 KB</div>
+          <div class="stat-label">压缩中转上限</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Upload Zone -->
     <section class="card" style="margin-bottom:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -284,10 +323,6 @@
       </button>
       <input type="text" id="searchInput" placeholder="搜索图片名称..." class="input" />
       <span style="font-size:0.8rem;color:var(--muted);margin-left:auto;" id="countLabel">共 0 张</span>
-      <button id="logoutBtn" class="button secondary" type="button" title="退出登录">
-        <i data-lucide="log-out" class="icon-sm"></i>
-        退出
-      </button>
     </div>
 
     <!-- Image Grid -->
@@ -297,9 +332,11 @@
         <p>暂无图片，点击上方按钮上传第一张图片吧！</p>
       </div>
     </div>
+    </div><!-- /#panel-images -->
 
-    <!-- API Keys -->
-    <section class="card" style="margin-top:28px;padding:20px;">
+    <!-- ── Panel: API Keys ── -->
+    <div class="admin-panel hidden" id="panel-keys" role="tabpanel">
+    <section class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
         <h3 style="margin:0;display:flex;align-items:center;gap:8px;">
           <i data-lucide="key-round" class="icon-md" style="color:var(--brand);"></i>
@@ -308,7 +345,7 @@
         <span class="badge info"><span>脚本 / 外部接入</span></span>
       </div>
       <p class="muted" style="font-size:0.85rem;margin-bottom:14px;line-height:1.7;">
-        给脚本或外部程序签发带权限的密钥（上传 / 列表 / 删除）。密钥明文只在创建时显示一次，服务端仅保存哈希，改动立即生效。
+        给脚本或外部程序签发带权限的密钥（上传 / 列表 / 删除）。密钥明文只在创建时显示一次；服务端只保存它的哈希——哈希存在独立的存储桶 <code>yoo-keys</code> 里，自动创建，不需要任何额外配置。改动立即生效。
       </p>
 
       <div id="keySecretBox" style="display:none;border:1px solid var(--warning);background:var(--warning-light);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
@@ -334,6 +371,7 @@
 
       <div id="keyList"></div>
     </section>
+    </div><!-- /#panel-keys -->
   </main>
 
   </div><!-- /#adminApp -->

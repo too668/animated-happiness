@@ -482,6 +482,31 @@ function attachEvents() {
   }
 }
 
+// ── TABS ──
+function initTabs() {
+  var tabs = document.querySelectorAll('.admin-tab[data-tab]');
+  if (!tabs.length) return;
+  var TAB_KEY = 'yoo-admin-tab';
+
+  function activate(name) {
+    Array.prototype.forEach.call(tabs, function (t) {
+      var on = t.dataset.tab === name;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    var images = document.getElementById('panel-images');
+    var keys = document.getElementById('panel-keys');
+    if (images) images.classList.toggle('hidden', name !== 'images');
+    if (keys) keys.classList.toggle('hidden', name !== 'keys');
+    localStorage.setItem(TAB_KEY, name);
+  }
+
+  Array.prototype.forEach.call(tabs, function (t) {
+    t.addEventListener('click', function () { activate(t.dataset.tab); });
+  });
+  activate(localStorage.getItem(TAB_KEY) === 'keys' ? 'keys' : 'images');
+}
+
 // ── API KEYS ──
 var PERMS_ALL = ['upload', 'list', 'delete'];
 var PERM_LABEL = { upload: '上传', list: '列表', delete: '删除' };
@@ -712,6 +737,7 @@ function initGate(appId, onAuthed) {
       updateCounts(cached);
       renderList(cached);
       attachEvents();
+      initTabs();
       initKeys();
       syncFromServer();
     });
