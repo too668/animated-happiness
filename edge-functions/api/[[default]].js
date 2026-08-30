@@ -14,22 +14,15 @@ const S3_MAX_BYTES = 5 * 1024 * 1024 * 1024; // S3 上限 5GB
 // iDrive e2 S3 配置（HTTP/SigV4）
 const IDRIVE_ENDPOINT = 'https://s3.ap-northeast-1.idrivee2.com';
 const IDRIVE_REGION = 'ap-northeast-1';
-let s3Configured = false;
-const envVarsGlobal = globalThis.env || {};
 
 function envVar(context, name) {
-  const envVars = (context && context.env) || envVarsGlobal;
+  const envVars = (context && context.env) || globalThis.env || {};
   const v = envVars[name];
   return typeof v === 'string' && v.trim() ? v.trim() : '';
 }
 
-// Check if S3 is configured
-if (envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET')) {
-  const accessKeyId = envVar({ env: envVarsGlobal }, 'IDRIVE_ACCESS_KEY_ID');
-  const secretAccessKey = envVar({ env: envVarsGlobal }, 'IDRIVE_SECRET_ACCESS_KEY');
-  if (accessKeyId && secretAccessKey) {
-    s3Configured = true;
-  }
+function isS3Configured(context) {
+  return !!(envVar(context, 'IDRIVE_BUCKET') && envVar(context, 'IDRIVE_ACCESS_KEY_ID') && envVar(context, 'IDRIVE_SECRET_ACCESS_KEY'));
 }
 const UPLOAD_URL_TTL = 600;
 const LIST_DEFAULT_LIMIT = 100;
@@ -304,16 +297,16 @@ async function s3SigningKey(secret, date, region) {
   return s3Hmac(kService, 'aws4_request');
 }
 
-function s3Host() {
+function s3Host(context) {
   const endpointHost = new URL(IDRIVE_ENDPOINT).host;
-  return `${envVar(null, 'IDRIVE_BUCKET')}.${endpointHost}`;
+  return `${envVar(context, 'IDRIVE_BUCKET')}.${endpointHost}`;
 }
 
-async function s3PresignPut(pathname, contentType, expireSeconds) {
-  const bucket = envVar(null, 'IDRIVE_BUCKET');
-  const accessKey = envVar(null, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(null, 'IDRIVE_SECRET_ACCESS_KEY');
-  const host = s3Host();
+async function s3PresignPut(context, pathname, contentType, expireSeconds) {
+  const bucket = envVar(context, 'IDRIVE_BUCKET');
+  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host(context);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
@@ -346,11 +339,11 @@ async function s3PresignPut(pathname, contentType, expireSeconds) {
   return `https://${host}${pathname}?${qs}&X-Amz-Signature=${sig}`;
 }
 
-async function s3ListObjects(limit) {
-  const bucket = envVar(null, 'IDRIVE_BUCKET');
-  const accessKey = envVar(null, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(null, 'IDRIVE_SECRET_ACCESS_KEY');
-  const host = s3Host();
+async function s3ListObjects(context, limit) {
+  const bucket = envVar(context, 'IDRIVE_BUCKET');
+  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host(context);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
@@ -399,11 +392,11 @@ async function s3ListObjects(limit) {
   return keys;
 }
 
-async function s3DeleteObject(key) {
-  const bucket = envVar(null, 'IDRIVE_BUCKET');
-  const accessKey = envVar(null, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(null, 'IDRIVE_SECRET_ACCESS_KEY');
-  const host = s3Host();
+async function s3DeleteObject(context, key) {
+  const bucket = envVar(context, 'IDRIVE_BUCKET');
+  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host(context);
   const pathname = '/' + key;
   const d = new Date();
   const date = s3Ymd(d);
@@ -520,10 +513,10 @@ export async function onRequest(context) {
         storage: probe,
         keys: keysProbe,
         s3: {
-          configured: s3Configured,
+          configured: isS3Configured(context),
           endpoint: IDRIVE_ENDPOINT,
           region: IDRIVE_REGION,
-          bucket: s3Configured ? envVar(null, 'IDRIVE_BUCKET') : ''
+          bucket: isS3Configured(context) ? envVar(context, 'IDRIVE_BUCKET') : ''
         },
         limits: {
           relayMaxBytes: RELAY_MAX_BYTES,
@@ -649,15 +642,15 @@ export async function onRequest(context) {
 
       // ── S3 列表 ──
       if (storage === 's3') {
-        if (!s3Configured) return fail('S3 存储未配置', 503);
+        if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
         try {
-          const keys = await s3ListObjects(limit);
+          const keys = await s3ListObjects(context, limit);
           const items = keys.map(k => {
             const name = k.split('/').pop();
             return {
               key: k,
               name,
-              url: `https://${s3Host()}/${k}`,
+              url: `https://${s3Host(context)}/${k}`,
               type: MIME_BY_EXT[extOf(k)] || 'application/octet-stream',
               etag: null
             };
@@ -750,15 +743,15 @@ export async function onRequest(context) {
 
       // ── S3 直传 ──
       if (storage === 's3') {
-        if (!s3Configured) return fail('S3 存储未配置（缺环境变量）', 503);
+        if (!isS3Configured(context)) return fail('S3 存储未配置（缺环境变量）', 503);
         if (Number.isFinite(size) && size > S3_MAX_BYTES) {
           return fail(`S3 文件过大，上限 ${Math.floor(S3_MAX_BYTES / 1024 / 1024 / 1024)}GB`);
         }
         const safeName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
         const key = `uploads/${buildKey(safeName)}`;
         const pathname = '/' + key;
-        const uploadUrl = await s3PresignPut(pathname, contentType, UPLOAD_URL_TTL);
-        const s3PublicUrl = `https://${s3Host()}/${key}`;
+        const uploadUrl = await s3PresignPut(context, pathname, contentType, UPLOAD_URL_TTL);
+        const s3PublicUrl = `https://${s3Host(context)}/${key}`;
         return json({
           ok: true,
           key,
@@ -875,12 +868,12 @@ export async function onRequest(context) {
 
       // ── S3 删除 ──
       if (storage === 's3') {
-        if (!s3Configured) return fail('S3 存储未配置', 503);
+        if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
         const rawKey = url.searchParams.get('key') || url.searchParams.get('url') || '';
         const key = keyFromAny(rawKey);
         if (!key) return fail('缺少参数 key');
         try {
-          await s3DeleteObject(key);
+          await s3DeleteObject(context, key);
           return json({ ok: true, key, message: '已删除', storage: 's3' });
         } catch (e) {
           return fail('S3 删除失败：' + e.message, 500);
