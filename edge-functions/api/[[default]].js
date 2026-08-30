@@ -283,13 +283,11 @@ export default async function onRequest(context) {
 
     // Upload to EdgeOne Blob Storage using direct set
     const store = getStore('functions-test');
-    console.error('[upload] About to call store.set with key:', key);
-
+    
     const result = await store.set(key, fileBuffer, {
       contentType: mimeType
     });
-    console.error('[upload] Store set result:', result);
-
+    
     return json({
       ok: true,
       key,
