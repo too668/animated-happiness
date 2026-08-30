@@ -596,6 +596,7 @@ footer {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 16px;
+  margin-bottom: 48px;
 }
 .image-item {
   position: relative;
@@ -709,4 +710,61 @@ footer {
   color: var(--muted);
   margin-top: 6px;
   text-align: center;
+}
+
+/* ── 图库（瀑布流） ── */
+.container-wide {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 20px 56px;
+}
+.masonry {
+  columns: 4 260px;
+  column-gap: 16px;
+}
+.masonry .empty {
+  column-span: all;
+}
+.masonry .tile {
+  break-inside: avoid;
+  margin: 0 0 16px;
+  position: relative;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card-bg);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.masonry .tile:hover {
+  border-color: var(--brand);
+  box-shadow: var(--shadow-md);
+}
+.masonry .tile img {
+  width: 100%;
+  display: block;
+  background: var(--surface);
+}
+.tile-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 28px 12px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
+  color: #fff;
+  font-size: 0.75rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.tile:hover .tile-bar { opacity: 1; }
+.tile-bar strong {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
 }

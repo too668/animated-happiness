@@ -33,13 +33,58 @@ const CORS = {
 const control = getStore({ name: STORE_NAME, consistency: 'strong' });
 const cached = getStore(STORE_NAME);
 
-const json = (data, status = 200) =>
+const json = (data, status = 200, extra) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' }
+    headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8', ...(extra || {}) }
   });
 
 const fail = (error, status = 400) => json({ ok: false, error }, status);
+
+// ── 管理后台密码门禁 ─────────────────────────────────────────
+// 密码只存在于环境变量 ADMIN_PASSWORD（EdgeOne 控制台配置），代码与前端均不持明文。
+// 登录成功下发 httpOnly Cookie（值 = sha256 派生 token），7 天有效，刷新不重填。
+// 环境变量未配置时门禁开放（enabled:false），避免配置前把所有人锁在外面。
+const AUTH_COOKIE = 'yoo_auth';
+const AUTH_MAX_AGE = 7 * 24 * 3600;
+
+function envPassword(context) {
+  const envVars = (context && context.env) || globalThis.env || {};
+  const v = envVars.ADMIN_PASSWORD;
+  return typeof v === 'string' && v.trim() ? v : '';
+}
+
+async function tokenFor(password) {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode('yoo-admin:' + password)
+  );
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function ctEqual(a, b) {
+  let diff = a.length ^ b.length;
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}
+
+function requestToken(request) {
+  const header = request.headers.get('cookie') || '';
+  const m = header.match(/(?:^|;\s*)yoo_auth=([^;]+)/);
+  return m ? m[1] : '';
+}
+
+async function authState(context, request) {
+  const password = envPassword(context);
+  if (!password) return { enabled: false, authed: true };
+  const token = requestToken(request);
+  if (!token) return { enabled: true, authed: false };
+  return { enabled: true, authed: ctEqual(token, await tokenFor(password)) };
+}
+
+const authCookie = (token, maxAge) =>
+  `${AUTH_COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax; Secure`;
 
 const extOf = (name) => {
   const base = String(name || '').split(/[\\/]/).pop() || '';
@@ -130,6 +175,39 @@ export async function onRequest(context) {
   const route = url.pathname.replace(/^\/api\/?/, '').replace(/\/+$/, '');
 
   try {
+    // ── GET /api/auth-status ───────────────────────────────────────
+    if (request.method === 'GET' && route === 'auth-status') {
+      const state = await authState(context, request);
+      return json({ ok: true, enabled: state.enabled, authed: state.authed });
+    }
+
+    // ── POST /api/login ────────────────────────────────────────────
+    if (request.method === 'POST' && route === 'login') {
+      const password = envPassword(context);
+      if (!password) return json({ ok: true, enabled: false, authed: true });
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return fail('需要 JSON 请求体');
+      }
+      const guess = String(body.password || '');
+      if (!guess || !ctEqual(await tokenFor(guess), await tokenFor(password))) {
+        return fail('密码错误', 401);
+      }
+      return json(
+        { ok: true, enabled: true, authed: true },
+        200,
+        { 'Set-Cookie': authCookie(await tokenFor(password), AUTH_MAX_AGE) }
+      );
+    }
+
+    // ── POST /api/logout ───────────────────────────────────────────
+    if (request.method === 'POST' && route === 'logout') {
+      return json({ ok: true }, 200, { 'Set-Cookie': authCookie('', 0) });
+    }
+
     // ── GET /api/health ────────────────────────────────────────────
     if (request.method === 'GET' && route === 'health') {
       let probe;

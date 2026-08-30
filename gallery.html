@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOO · 图库</title>
+  <meta name="description" content="YOO 图片托管 - 瀑布流浏览全部图片" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- 钉死版本 + SRI：@latest 会随上游改名图标而悄悄坏掉；1.37.0 是全站图标逐一验证过的版本，
+       integrity 锁死文件字节，CDN 哪怕被换包也加载不了 -->
+  <script src="https://unpkg.com/lucide@1.37.0/dist/umd/lucide.min.js"
+          integrity="sha384-Q+SBuMPu2+Rlj/ENVdxcp5LNmVj4xEw5M3/6aY4Uf0yd4NQSO/OyjkvdzTnDCxpr"
+          crossorigin="anonymous" defer></script>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="./index.html" class="brand" style="text-decoration:none;">
+        <svg class="wordmark wordmark-nav" viewBox="0 0 124 44" role="img" aria-label="YOO">
+          <g class="g-y"><path class="stroke wm-y" pathLength="1" d="M7 7Q13 17 21 24M35 7Q29 17 21 24M21 24V37"/></g>
+          <g class="g-o1"><circle class="stroke wm-o1" pathLength="1" cx="60" cy="22" r="15.5"/></g>
+          <g class="g-o2"><path class="stroke wm-o2" pathLength="1" d="M113.7 13.11A15.5 15.5 0 1 1 102.35 6.56"/><circle class="wm-dot" cx="108.75" cy="8.58" r="3"/></g>
+        </svg>
+      </a>
+      <nav class="nav">
+        <a href="./index.html">
+          <i data-lucide="home" class="icon-sm"></i>
+          <span>主页</span>
+        </a>
+        <a href="./api.html">
+          <i data-lucide="book-open" class="icon-sm"></i>
+          <span>API 文档</span>
+        </a>
+        <a href="./gallery.html" class="active">
+          <i data-lucide="gallery-vertical-end" class="icon-sm"></i>
+          <span>图库</span>
+        </a>
+        <a href="./upload.html">
+          <i data-lucide="settings" class="icon-sm"></i>
+          <span>管理后台</span>
+        </a>
+        <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
+          <i data-lucide="moon" class="icon-moon icon-md"></i>
+          <i data-lucide="sun" class="icon-sun icon-md"></i>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container-wide">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+      <h1 style="margin:0;font-size:1.5rem;display:flex;align-items:center;gap:10px;">
+        <i data-lucide="gallery-vertical-end" class="icon-md" style="color:var(--brand);"></i>
+        图库
+      </h1>
+      <span id="galleryCount" style="color:var(--muted);font-size:0.8rem;"></span>
+      <button id="galleryRefresh" class="button secondary" type="button" style="margin-left:auto;">
+        <i data-lucide="refresh-cw" class="icon-sm"></i>
+        刷新
+      </button>
+    </div>
+    <div id="masonry" class="masonry">
+      <div class="empty"><p>加载中...</p></div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <div>
+            <span class="footer-brand-name">YOO · 图片托管</span>
+            <span class="footer-brand-tag">上传即得直链 · 边缘节点出图</span>
+          </div>
+        </div>
+        <nav class="footer-links">
+          <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
+          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
+          <a href="./gallery.html"><i data-lucide="gallery-vertical-end" class="icon-xs"></i> 图库</a>
+          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+        </nav>
+      </div>
+      <p class="footer-note">基于 EdgeOne Makers · 图片经 <code>/i/</code> 路由出图，删除后旧链接最多还会被边缘节点命中 1 小时</p>
+    </div>
+  </footer>
+
+  <div id="toastContainer" class="toast-container"></div>
+  <script src="./script.js"></script>
+  <script>
+    (function () {
+      function esc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      var root = document.getElementById('masonry');
+      var count = document.getElementById('galleryCount');
+
+      function load() {
+        root.innerHTML = '<div class="empty"><p>加载中...</p></div>';
+        fetch(location.origin + '/api/list?limit=500')
+          .then(function (r) {
+            return r.text().then(function (t) {
+              try { return JSON.parse(t); } catch (e) { throw new Error('HTTP ' + r.status); }
+            });
+          })
+          .then(function (d) {
+            if (!d || d.ok !== true) throw new Error((d && d.error) || '列表读取失败');
+            count.textContent = '共 ' + d.total + ' 张';
+            if (!d.items.length) {
+              root.innerHTML = '<div class="empty"><p>暂无图片，去管理后台上传第一张吧！</p></div>';
+              return;
+            }
+            var html = '';
+            d.items.forEach(function (it) {
+              html += '<a class="tile" href="' + esc(it.url) + '" target="_blank" rel="noopener" title="' + esc(it.name) + '">' +
+                '<img src="' + esc(it.url) + '" alt="' + esc(it.name) + '" loading="lazy" />' +
+                '<div class="tile-bar"><strong>' + esc(it.name) + '</strong></div>' +
+                '</a>';
+            });
+            root.innerHTML = html;
+          })
+          .catch(function (e) {
+            count.textContent = '';
+            root.innerHTML = '<div class="empty"><p>加载失败：' + esc(e.message) + '</p></div>';
+          });
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        var b = document.getElementById('galleryRefresh');
+        if (b) b.addEventListener('click', load);
+        load();
+      });
+    })();
+  </script>
+</body>
+</html>

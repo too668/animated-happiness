@@ -10,20 +10,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script src="https://unpkg.com/lucide@latest" defer></script>
+  <!-- 钉死版本 + SRI：@latest 会随上游改名图标而悄悄坏掉；1.37.0 是全站图标逐一验证过的版本，
+       integrity 锁死文件字节，CDN 哪怕被换包也加载不了 -->
+  <script src="https://unpkg.com/lucide@1.37.0/dist/umd/lucide.min.js"
+          integrity="sha384-Q+SBuMPu2+Rlj/ENVdxcp5LNmVj4xEw5M3/6aY4Uf0yd4NQSO/OyjkvdzTnDCxpr"
+          crossorigin="anonymous" defer></script>
 </head>
 <body>
 
-  <!-- YOO 标志：全站唯一来源。单色 currentColor，无 gradient id，可任意尺寸复用 -->
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-    <symbol id="yoo-mark" viewBox="0 0 32 32">
-      <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M0 9A9 9 0 0 1 9 0H23A9 9 0 0 1 32 9V23A9 9 0 0 1 23 32H9A9 9 0 0 1 0 23V9Z M4.6 16A11.4 11.4 0 1 0 27.4 16A11.4 11.4 0 1 0 4.6 16Z M14.06 13.27L25.88 19.88L27.88 17.13L17.94 7.93Z M18 13.31L15.36 26.6L18.6 27.65L24.27 15.35Z M19.17 17.07L5.72 18.67L5.72 22.07L19.17 23.67Z M15.96 19.35L10.29 7.05L7.05 8.1L9.69 21.39Z M12.8 17L22.74 7.8L20.75 5.05L8.92 11.66Z"/>
-    </symbol>
-  </defs></svg>
   <header class="topbar">
     <div class="topbar-inner">
       <a href="./index.html" class="brand" style="text-decoration:none;">
-        <svg class="brand-logo" aria-hidden="true"><use href="#yoo-mark"/></svg>
         <svg class="wordmark wordmark-nav" viewBox="0 0 124 44" role="img" aria-label="YOO">
           <g class="g-y"><path class="stroke wm-y" pathLength="1" d="M7 7Q13 17 21 24M35 7Q29 17 21 24M21 24V37"/></g>
           <g class="g-o1"><circle class="stroke wm-o1" pathLength="1" cx="60" cy="22" r="15.5"/></g>
@@ -42,6 +39,10 @@
         <a href="./api.html" class="active">
           <i data-lucide="book-open" class="icon-sm"></i>
           <span>API 文档</span>
+        </a>
+        <a href="./gallery.html">
+          <i data-lucide="gallery-vertical-end" class="icon-sm"></i>
+          <span>图库</span>
         </a>
         <a href="./upload.html">
           <i data-lucide="settings" class="icon-sm"></i>
@@ -290,7 +291,6 @@ curl -X DELETE "https://yooy.cc.cd/api/delete?url=https%3A%2F%2Fyooy.cc.cd%2Fi%2
     <div class="container">
       <div class="footer-content">
         <div class="footer-brand">
-          <svg class="brand-logo-small" aria-hidden="true"><use href="#yoo-mark"/></svg>
           <div>
             <span class="footer-brand-name">YOO · 图片托管</span>
             <span class="footer-brand-tag">上传即得直链 · 边缘节点出图</span>
@@ -299,6 +299,7 @@ curl -X DELETE "https://yooy.cc.cd/api/delete?url=https%3A%2F%2Fyooy.cc.cd%2Fi%2
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
           <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
+          <a href="./gallery.html"><i data-lucide="gallery-vertical-end" class="icon-xs"></i> 图库</a>
           <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
         </nav>
       </div>
