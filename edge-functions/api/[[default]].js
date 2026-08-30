@@ -1,4 +1,4 @@
-import { getStore, PreconditionFailedError } from '@edgeone/pages-blob';
+import { getStore } from '@edgeone/pages-blob';
 // S3 客户端用于 iDrive e2 兼容存储（SigV4 签名）
 import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from 'aws-sdk-js-v3';
 
@@ -56,15 +56,14 @@ const IMAGE_TYPES = {
   '.bmp': 'image/bmp'
 };
 
+const STORAGE_BACKENDS = ['blob', 's3']; // 支持的存储后端
+const DEFAULT_STORAGE = 'blob'; // 默认使用 Blob（腾讯云）
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 };
-
-// 支持的存储后端
-const STORAGE_BACKENDS = ['blob', 's3'];
-const DEFAULT_STORAGE = 'blob'; // 默认使用 Blob（腾讯云）
 
 const control = getStore({ name: STORE_NAME, consistency: 'strong' });
 const cached = getStore(STORE_NAME);
@@ -85,9 +84,7 @@ const AUTH_COOKIE = 'yoo_auth';
 const AUTH_MAX_AGE = 7 * 24 * 3600;
 
 function envPassword(context) {
-  const envVars = (context && context.env) || globalThis.env || {};
-  const v = envVars.ADMIN_PASSWORD;
-  return typeof v === 'string' && v.trim() ? v : '';
+  return envVar(context, 'ADMIN_PASSWORD');
 }
 
 async function sha256Hex(input) {
@@ -122,15 +119,38 @@ const authCookie = (token, maxAge) =>
   `${AUTH_COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax; Secure`;
 
 // ── API key ─────────────────────────────────────────────────
-// 记录存在独立 store：control.list() 列的是整个 yoo-images，key 记录绝不能混进去，
-// 否则会顺着 /api/list 泄给所有持有 list 权限的人。
-// blob key = 'k/' + sha256('yoo-key:'+secret)：拿到密钥一次 get() 就能定位，无需扫描。
-// 强一致句柄是「吊销立即生效」的前提；最终一致读可能让已删的 key 继续通过验证。
-const KEY_STORE_NAME = 'yoo-keys';
-const KEY_PREFIX = 'k/';
+// 记录存 Upstash Redis（环境变量 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN），
+// 与图片桶完全隔离：平台凭证哪怕泄露，key 记录也不会跟着漏。
+// 库里只有 secret 的 sha256 哈希，明文只在创建时返回一次。
+// redis key = 'yookey:' + sha256('yoo-key:'+secret)：拿到密钥一次 GET 就能定位，无需扫描；
+// 'yookeys:index'（SET）维护记录全集，供面板列表。Redis 强一致，吊销立即生效。
+const KEY_PREFIX = 'yookey:';
+const KEY_INDEX = 'yookeys:index';
 const VALID_PERMS = ['upload', 'list', 'delete'];
 const KEY_RE_SECRET = /^yoo_[0-9a-f]{24}$/i;
-const keyStore = getStore({ name: KEY_STORE_NAME, consistency: 'strong' });
+
+function envVar(context, name) {
+  const envVars = (context && context.env) || globalThis.env || {};
+  const v = envVars[name];
+  return typeof v === 'string' && v.trim() ? v.trim() : '';
+}
+
+// Upstash REST：POST 命令数组，响应里取 result 字段
+async function redis(context, cmd) {
+  const url = envVar(context, 'UPSTASH_REDIS_REST_URL');
+  const token = envVar(context, 'UPSTASH_REDIS_REST_TOKEN');
+  if (!url || !token) {
+    throw new Error('Redis 未配置：缺环境变量 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN');
+  }
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmd)
+  });
+  const data = await r.json();
+  if (data && data.error) throw new Error('Redis: ' + data.error);
+  return data ? data.result : null;
+}
 
 const keyHashFor = (secret) => sha256Hex('yoo-key:' + secret);
 
@@ -166,7 +186,8 @@ async function resolveAuth(context, request, url) {
   if (!secret) return { role: null, perms: [] };
   let record = null;
   try {
-    record = await keyStore.get(KEY_PREFIX + (await keyHashFor(secret)), { type: 'json' });
+    const raw = await redis(context, ['GET', KEY_PREFIX + (await keyHashFor(secret))]);
+    record = raw ? JSON.parse(raw) : null;
   } catch { /* 存储异常按未授权处理 */ }
   if (!record) return { role: null, perms: [] };
   return { role: 'key', perms: normalizePerms(record.perms) || [], id: record.id };
@@ -178,6 +199,21 @@ function permGate(auth, perm) {
   }
   if (!auth.perms.includes(perm)) {
     return fail(`当前 API key 没有 ${perm} 权限`, 403);
+  }
+  return null;
+}
+
+// 面板按 id 改/吊销：索引 + MGET 定位记录
+async function findKeyRecord(context, id) {
+  const hashes = (await redis(context, ['SMEMBERS', KEY_INDEX])) || [];
+  if (!hashes.length) return null;
+  const recs = (await redis(context, ['MGET', ...hashes])) || [];
+  for (let i = 0; i < hashes.length; i++) {
+    if (!recs[i]) continue;
+    try {
+      const rec = JSON.parse(recs[i]);
+      if (rec && rec.id === id) return { rkey: hashes[i], rec };
+    } catch { /* 单条坏数据跳过 */ }
   }
   return null;
 }
@@ -316,6 +352,12 @@ export async function onRequest(context) {
       } catch (e) {
         probe = { ok: false, error: e.message };
       }
+      let keysProbe;
+      try {
+        keysProbe = { ok: (await redis(context, ['PING'])) === 'PONG', backend: 'upstash-redis' };
+      } catch (e) {
+        keysProbe = { ok: false, backend: 'upstash-redis', error: e.message };
+      }
       
       // S3 健康检查
       let s3Probe;
@@ -341,6 +383,7 @@ export async function onRequest(context) {
         store: STORE_NAME,
         storage: probe,
         s3: s3Probe,
+        keys: keysProbe,
         limits: {
           relayMaxBytes: RELAY_MAX_BYTES,
           directMaxBytes: DIRECT_MAX_BYTES,
@@ -356,23 +399,27 @@ export async function onRequest(context) {
       const admin = await authState(context, request);
       if (!admin.authed) return fail('仅管理员可操作：请先在管理后台登录', 401);
 
-      // GET —— 列表。BlobInfo 只有 key/etag，记录体逐个 get 出来
+      // GET —— 列表：索引集合拿全部 redis key，一次 MGET 取记录
       if (request.method === 'GET') {
-        const { blobs } = await keyStore.list({ prefix: KEY_PREFIX });
+        const hashes = (await redis(context, ['SMEMBERS', KEY_INDEX])) || [];
         const keys = [];
-        for (const blob of blobs || []) {
-          try {
-            const rec = await keyStore.get(blob.key, { type: 'json' });
-            if (rec && rec.id) {
-              keys.push({
-                id: rec.id,
-                name: rec.name || '',
-                prefix: rec.prefix || 'yoo_',
-                perms: normalizePerms(rec.perms) || [],
-                createdAt: rec.createdAt || null
-              });
-            }
-          } catch { /* 单条坏数据跳过 */ }
+        if (hashes.length) {
+          const recs = (await redis(context, ['MGET', ...hashes])) || [];
+          for (const raw of recs) {
+            if (!raw) continue;
+            try {
+              const rec = JSON.parse(raw);
+              if (rec && rec.id) {
+                keys.push({
+                  id: rec.id,
+                  name: rec.name || '',
+                  prefix: rec.prefix || 'yoo_',
+                  perms: normalizePerms(rec.perms) || [],
+                  createdAt: rec.createdAt || null
+                });
+              }
+            } catch { /* 单条坏数据跳过 */ }
+          }
         }
         keys.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         return json({ ok: true, keys }, 200, { 'Cache-Control': 'no-store' });
@@ -399,15 +446,16 @@ export async function onRequest(context) {
             createdAt: Date.now(),
             prefix: secret.slice(0, 8) // 供面板展示 yoo_xxxx····
           };
-          try {
-            await keyStore.setJSON(KEY_PREFIX + (await keyHashFor(secret)), record, { onlyIfNew: true });
+          // NX：极小概率撞键时返回 null，换个密钥再来
+          const rkey = KEY_PREFIX + (await keyHashFor(secret));
+          const set = await redis(context, ['SET', rkey, JSON.stringify(record), 'NX']);
+          if (set) {
+            await redis(context, ['SADD', KEY_INDEX, rkey]);
             return json(
               { ok: true, id: record.id, name, perms, secret, createdAt: record.createdAt },
               200,
               { 'Cache-Control': 'no-store' }
             );
-          } catch (e) {
-            if (!(e instanceof PreconditionFailedError)) throw e; // 极小概率撞键，换个密钥再来
           }
         }
         return fail('密钥创建失败，请重试', 500);
@@ -423,36 +471,30 @@ export async function onRequest(context) {
         }
         const id = String(body.id || '');
         if (!id) return fail('缺少参数 id');
-        const { blobs } = await keyStore.list({ prefix: KEY_PREFIX });
-        for (const blob of blobs || []) {
-          const rec = await keyStore.get(blob.key, { type: 'json' });
-          if (!rec || rec.id !== id) continue;
-          if (body.perms !== undefined) {
-            const perms = normalizePerms(body.perms);
-            if (!perms || !perms.length) return fail('权限至少选择一项（upload / list / delete）');
-            rec.perms = perms;
-          }
-          if (body.name !== undefined) {
-            rec.name = String(body.name || '').trim().slice(0, 40) || '未命名';
-          }
-          await keyStore.setJSON(blob.key, rec);
-          return json({ ok: true, id: rec.id, name: rec.name, perms: rec.perms });
+        const found = await findKeyRecord(context, id);
+        if (!found) return fail('API key 不存在', 404);
+        const rec = found.rec;
+        if (body.perms !== undefined) {
+          const perms = normalizePerms(body.perms);
+          if (!perms || !perms.length) return fail('权限至少选择一项（upload / list / delete）');
+          rec.perms = perms;
         }
-        return fail('API key 不存在', 404);
+        if (body.name !== undefined) {
+          rec.name = String(body.name || '').trim().slice(0, 40) || '未命名';
+        }
+        await redis(context, ['SET', found.rkey, JSON.stringify(rec)]);
+        return json({ ok: true, id: rec.id, name: rec.name, perms: rec.perms });
       }
 
       // DELETE ?id= —— 吊销
       if (request.method === 'DELETE') {
         const id = url.searchParams.get('id') || '';
         if (!id) return fail('缺少参数 id');
-        const { blobs } = await keyStore.list({ prefix: KEY_PREFIX });
-        for (const blob of blobs || []) {
-          const rec = await keyStore.get(blob.key, { type: 'json' });
-          if (!rec || rec.id !== id) continue;
-          await keyStore.delete(blob.key);
-          return json({ ok: true, id, message: '已吊销' });
-        }
-        return fail('API key 不存在', 404);
+        const found = await findKeyRecord(context, id);
+        if (!found) return fail('API key 不存在', 404);
+        await redis(context, ['DEL', found.rkey]);
+        await redis(context, ['SREM', KEY_INDEX, found.rkey]);
+        return json({ ok: true, id, message: '已吊销' });
       }
     }
 
@@ -464,46 +506,84 @@ export async function onRequest(context) {
       const limit = Math.min(Number.isFinite(want) ? want : LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT);
       const cursor = url.searchParams.get('cursor');
       const detail = url.searchParams.get('detail') === '1';
+      const storageParam = getStorageParam(url); // blob | s3 | all
 
-      // paginate:false 才会返回 cursor；默认自动翻页时 cursor 恒为 undefined
-      const options = { limit, paginate: false };
-      if (cursor) options.cursor = cursor;
-      if (url.searchParams.get('all') === '1') delete options.limit;
-
-      const result = await control.list(options);
-      const items = (result.blobs || []).map((blob) => {
-        const name = blob.key.split('/').pop();
-        const item = {
+      let items = [];
+      let total = 0;
+      
+      if (storageParam === 'all') {
+        // 分别查询两个存储
+        const blobResult = await control.list({ limit: limit * 2, paginate: false });
+        const blobItems = (blobResult.blobs || []).map((blob) => ({
           key: blob.key,
-          name,
+          name: blob.key.split('/').pop(),
           url: publicUrl(origin, blob.key),
           type: MIME_BY_EXT[extOf(blob.key)] || 'application/octet-stream',
-          etag: blob.etag || null
-        };
-        if (detail) item.detail = true;
-        return item;
-      });
-
-      if (detail) {
-        for (const item of items.slice(0, 50)) {
-          try {
-            const meta = await cached.getMetadata(item.key);
-            const headers = (meta && meta.headers) || {};
-            const len = headers['content-length'] || headers['Content-Length'];
-            item.size = len ? parseInt(len, 10) : null;
-            item.contentType = (meta && meta.contentType) || item.type;
-          } catch {
-            item.size = null;
+          etag: blob.etag || null,
+          storage: 'blob'
+        }));
+        
+        const s3Items = await listFromS3(limit * 2);
+        const s3Mapped = s3Items.map(obj => ({
+          key: obj.key,
+          name: obj.name,
+          url: obj.url,
+          type: getS3Mime(obj),
+          etag: obj.etag,
+          size: obj.size,
+          storage: 's3'
+        }));
+        
+        items = [...blobItems, ...s3Mapped];
+        total = blobItems.length + s3Mapped.length;
+      } else {
+        // 单一存储
+        if (storageParam === 'blob') {
+          const result = await control.list({ limit, paginate: false });
+          items = (result.blobs || []).map((blob) => ({
+            key: blob.key,
+            name: blob.key.split('/').pop(),
+            url: publicUrl(origin, blob.key),
+            type: MIME_BY_EXT[extOf(blob.key)] || 'application/octet-stream',
+            etag: blob.etag || null,
+            storage: 'blob'
+          }));
+          total = items.length;
+          
+          if (detail) {
+            for (const item of items.slice(0, 50)) {
+              try {
+                const meta = await cached.getMetadata(item.key);
+                const headers = (meta && meta.headers) || {};
+                const len = headers['content-length'] || headers['Content-Length'];
+                item.size = len ? parseInt(len, 10) : null;
+                item.contentType = (meta && meta.contentType) || item.type;
+              } catch {
+                item.size = null;
+              }
+            }
           }
+        } else if (storageParam === 's3') {
+          const s3Items = await listFromS3(limit);
+          items = s3Items.map(obj => ({
+            key: obj.key,
+            name: obj.name,
+            url: obj.url,
+            type: getS3Mime(obj),
+            etag: obj.etag,
+            size: obj.size,
+            storage: 's3'
+          }));
+          total = items.length;
         }
       }
 
       return json({
         ok: true,
         items,
-        total: items.length,
-        nextCursor: result.cursor || null,
-        hasMore: Boolean(result.cursor)
+        total,
+        nextCursor: null,
+        hasMore: false
       });
     }
 
@@ -667,10 +747,6 @@ export async function onRequest(context) {
       } else {
         // blob 存储（默认）
         const key = buildKey(finalName);
-
-        // 只能存字节；Content-Type 由 serve 路由按扩展名推导。
-        // cacheControl 与 /i/ 路由保持一致（1 小时）：目前出图以路由头为准，
-        // 但对象上留个一年值是个地雷，哪天改成透传元信息就会复活「删了还能看一年」。
         await control.set(key, bytes, {
           cacheControl: 'public, max-age=3600'
         });
@@ -696,52 +772,52 @@ export async function onRequest(context) {
       
       const storageParam = getStorageParam(url);
       
+      // 尝试从两个存储中删除
       let deleted = false;
       let deletedKey = key;
       
-      if (storageParam === 's3') {
-        if (!s3Available()) return fail('S3 存储未配置', 500);
-        
+      // 先检查 blob 存储
+      const blobMeta = await control.getMetadata(key);
+      if (blobMeta) {
+        await control.delete(key);
+        deleted = true;
+        deletedKey = key;
+      }
+      
+      // 再检查 s3 存储（如果 key 不带 idrive/前缀，添加后检查）
+      if (!deleted) {
         try {
           const bucketName = envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET');
           const cleanKey = key.startsWith('idrive/') ? key : `idrive/${key}`;
           
-          // 检查 S3 是否存在并删除
-          const listCommand = new ListObjectsV2Command({
+          // 检查 S3 是否存在
+          const s3Command = new ListObjectsV2Command({
             Bucket: bucketName,
             Prefix: cleanKey,
             MaxKeys: 1
           });
           
-          const response = await s3Client.send(listCommand);
-          if ((response.Contents || []).length > 0) {
-            const deleteCommand = new DeleteObjectCommand({
-              Bucket: bucketName,
-              Key: cleanKey
-            });
-            
-            await s3Client.send(deleteCommand);
+          const s3Response = await s3Client.send(s3Command);
+          if ((s3Response.Contents || []).length > 0) {
+            await deleteFromS3(cleanKey);
             deleted = true;
             deletedKey = cleanKey;
           }
         } catch (e) {
-          return fail(`删除失败：${e.message}`, 500);
+          // S3 异常忽略
         }
-      } else {
-        // blob 存储（默认）
-        const meta = await control.getMetadata(key);
-        if (!meta) return fail('文件不存在', 404);
-        
-        await control.delete(key);
-        deleted = true;
-        deletedKey = key;
       }
       
       if (!deleted) {
         return fail('文件不存在', 404);
       }
       
-      return json({ ok: true, key: deletedKey, message: '已删除', storage: deletedKey.startsWith('idrive/') ? 's3' : 'blob' });
+      return json({ 
+        ok: true, 
+        key: deletedKey, 
+        message: '已删除',
+        storage: deletedKey.startsWith('idrive/') ? 's3' : 'blob'
+      });
     }
 
     // ── 辅助函数：解析 storage 参数 ───────────────────────────────────
@@ -784,6 +860,59 @@ export async function onRequest(context) {
         key,
         url: `${IDRIVE_ENDPOINT}/${envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET')}/${key}`
       };
+    }
+
+    // ── 辅助函数：S3 删除 ───────────────────────────────────────────────
+    async function deleteFromS3(key) {
+      if (!s3Available()) throw new Error('S3 存储未配置');
+      
+      const bucketName = envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET');
+      // 自动清理 idrive/ 前缀
+      const cleanKey = key.startsWith('idrive/') ? key : `idrive/${key}`;
+      const command = new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: cleanKey
+      });
+      
+      await s3Client.send(command);
+      return { key: cleanKey, message: '已删除' };
+    }
+
+    // ── 辅助函数：S3 列表 ───────────────────────────────────────────────
+    async function listFromS3(limit = LIST_MAX_LIMIT) {
+      if (!s3Available()) return [];
+      
+      try {
+        const bucketName = envVar({ env: envVarsGlobal }, 'IDRIVE_BUCKET');
+        const command = new ListObjectsV2Command({
+          Bucket: bucketName,
+          Prefix: 'idrive/',
+          MaxKeys: limit
+        });
+        
+        const response = await s3Client.send(command);
+        return (response.Contents || []).map(obj => ({
+          key: obj.Key,
+          name: obj.Key.split('/').pop(),
+          url: `${IDRIVE_ENDPOINT}/${bucketName}/${obj.Key}`,
+          size: obj.Size,
+          etag: obj.ETag?.replace(/"/g, '') || null
+        }));
+      } catch {
+        return [];
+      }
+    }
+
+    // ── 辅助函数：获取 Blob 图片的 MIME 类型 ─────────────────────────────
+    function getBlobMime(blob) {
+      const ext = extOf(blob.key);
+      return IMAGE_TYPES[ext] || 'application/octet-stream';
+    }
+
+    // ── 辅助函数：获取 S3 图片的 MIME 类型 ──────────────────────────────
+    function getS3Mime(obj) {
+      const ext = extOf(obj.key || obj.Key);
+      return IMAGE_TYPES[ext] || 'application/octet-stream';
     }
 
     // ── 辅助函数：生成 S3 预签名 URL (SigV4) ───────────────────────────
