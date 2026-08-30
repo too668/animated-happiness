@@ -116,12 +116,6 @@ const KEY_INDEX = 'yookeys:index';
 const VALID_PERMS = ['upload', 'list', 'delete'];
 const KEY_RE_SECRET = /^yoo_[0-9a-f]{24}$/i;
 
-function envVar(context, name) {
-  const envVars = (context && context.env) || globalThis.env || {};
-  const v = envVars[name];
-  return typeof v === 'string' && v.trim() ? v.trim() : '';
-}
-
 // Upstash REST：POST 命令数组，响应里取 result 字段
 async function redis(context, cmd) {
   const url = envVar(context, 'UPSTASH_REDIS_REST_URL');
