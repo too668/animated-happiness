@@ -396,10 +396,10 @@ function bindMore() {
   });
 }
 
-function copyText(text) {
+function copyText(text, msg) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(
-      function () { showToast('链接已复制', 'success'); },
+      function () { showToast(msg || '链接已复制', 'success'); },
       function () { showToast('复制失败，请手动选取', 'error'); }
     );
   } else {
@@ -480,6 +480,153 @@ function attachEvents() {
       }
     });
   }
+}
+
+// ── API KEYS ──
+var PERMS_ALL = ['upload', 'list', 'delete'];
+var PERM_LABEL = { upload: '上传', list: '列表', delete: '删除' };
+
+function fmtDate(ts) {
+  if (!ts) return '';
+  var d = new Date(ts);
+  var p = function (n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+    ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+function loadKeys() {
+  return asyncJson(getApiBase() + '/api/keys').then(function (res) {
+    renderKeys(res.keys || []);
+  }).catch(function (e) {
+    showToast('读取 API key 列表失败：' + e.message, 'error');
+  });
+}
+
+function renderKeys(keys) {
+  var root = document.getElementById('keyList');
+  if (!root) return;
+  if (!keys || !keys.length) {
+    root.innerHTML = '<p class="muted" style="font-size:0.82rem;margin:0;">还没有 API key，用上面的表单创建一个。</p>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var perms = '';
+    for (var j = 0; j < PERMS_ALL.length; j++) {
+      var p = PERMS_ALL[j];
+      perms += '<label class="perm-label"><input type="checkbox" data-perm="' + p + '"' +
+        (k.perms.indexOf(p) >= 0 ? ' checked' : '') + ' /> ' + PERM_LABEL[p] + '</label>';
+    }
+    html += '<div class="key-row" data-id="' + esc(k.id) + '">' +
+      '<div class="key-info"><strong>' + esc(k.name) + '</strong>' +
+      '<div class="muted"><code>' + esc(k.prefix) + '····</code> · 创建于 ' + esc(fmtDate(k.createdAt)) + '</div></div>' +
+      '<div class="row-inline">' + perms +
+      '<button class="small-btn danger" data-a="delkey" data-k="' + esc(k.id) + '" title="吊销">' + ICONS.trash + '</button>' +
+      '</div></div>';
+  }
+  root.innerHTML = html;
+
+  Array.prototype.forEach.call(root.querySelectorAll('.key-row'), function (row) {
+    Array.prototype.forEach.call(row.querySelectorAll('input[data-perm]'), function (cb) {
+      cb.addEventListener('change', function () { updateKeyPerms(row); });
+    });
+  });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-a="delkey"]'), function (btn) {
+    btn.addEventListener('click', function () {
+      if (!window.confirm('吊销这个 API key？使用它的脚本会立刻失去访问权限，且无法恢复。')) return;
+      deleteKey(btn.dataset.k, btn);
+    });
+  });
+}
+
+function updateKeyPerms(row) {
+  var id = row.dataset.id;
+  var perms = [];
+  var boxes = row.querySelectorAll('input[data-perm]');
+  Array.prototype.forEach.call(boxes, function (cb) {
+    if (cb.checked) perms.push(cb.dataset.perm);
+  });
+  if (!perms.length) {
+    showToast('至少保留一项权限，如需停用请直接吊销', 'error');
+    loadKeys();
+    return;
+  }
+  Array.prototype.forEach.call(boxes, function (cb) { cb.disabled = true; });
+  asyncJson(getApiBase() + '/api/keys', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id, perms: perms })
+  }).then(function () {
+    showToast('权限已更新', 'success');
+    loadKeys();
+  }).catch(function (e) {
+    showToast('更新失败：' + e.message, 'error');
+    loadKeys();
+  });
+}
+
+function createKey() {
+  var nameEl = document.getElementById('keyName');
+  var perms = [];
+  if (document.getElementById('permUpload').checked) perms.push('upload');
+  if (document.getElementById('permList').checked) perms.push('list');
+  if (document.getElementById('permDelete').checked) perms.push('delete');
+  if (!perms.length) { showToast('至少选择一项权限', 'error'); return; }
+
+  var btn = document.getElementById('createKeyBtn');
+  var orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = ICONS.spinner + ' 创建中...';
+  asyncJson(getApiBase() + '/api/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: nameEl.value, perms: perms })
+  }).then(function (res) {
+    var box = document.getElementById('keySecretBox');
+    var txt = document.getElementById('keySecretText');
+    if (txt) txt.textContent = res.secret;
+    if (box) box.style.display = 'block';
+    nameEl.value = '';
+    showToast('创建成功，密钥只显示这一次', 'success');
+    loadKeys();
+  }).catch(function (e) {
+    showToast('创建失败：' + e.message, 'error');
+  }).finally(function () {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  });
+}
+
+function deleteKey(id, btn) {
+  var orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = ICONS.spinner;
+  asyncJson(getApiBase() + '/api/keys?id=' + encodeURIComponent(id), { method: 'DELETE' })
+    .then(function () {
+      showToast('已吊销', 'success');
+      loadKeys();
+    })
+    .catch(function (e) {
+      showToast('吊销失败：' + e.message, 'error');
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    });
+}
+
+function initKeys() {
+  var form = document.getElementById('createKeyForm');
+  if (!form) return;
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    createKey();
+  });
+  var copyBtn = document.getElementById('keySecretCopy');
+  if (copyBtn) copyBtn.addEventListener('click', function () {
+    var txt = document.getElementById('keySecretText');
+    if (txt && txt.textContent) copyText(txt.textContent, '密钥已复制');
+  });
+  loadKeys();
 }
 
 // ── 密码门禁 ──
@@ -565,6 +712,7 @@ function initGate(appId, onAuthed) {
       updateCounts(cached);
       renderList(cached);
       attachEvents();
+      initKeys();
       syncFromServer();
     });
   });

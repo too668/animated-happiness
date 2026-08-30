@@ -76,16 +76,47 @@
         </p>
       </div>
 
+      <!-- 认证 -->
+      <div class="card" style="margin-bottom:20px;border-color:rgba(230,162,60,0.3);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <i data-lucide="lock" class="icon-md" style="color:var(--warning);"></i>
+          <h3 style="margin:0;">认证</h3>
+          <span class="badge warning"><span>数据接口已启用鉴权</span></span>
+        </div>
+        <p style="color:var(--muted);line-height:1.9;margin-bottom:10px;">
+          上传 / 列表 / 删除等数据接口认两种凭证：<strong style="color:var(--text);">管理后台登录后的 Cookie</strong>（全部权限），或<strong style="color:var(--text);">管理后台「API Keys」卡片签发的密钥</strong>（按权限放行）。密钥明文只在创建时显示一次，服务端仅保存哈希；改权限与吊销立即生效。
+        </p>
+        <h3>携带密钥的两种方式</h3>
+        <pre><code>curl -H "Authorization: Bearer yoo_xxxxxxxxxxxxxxxxxxxxxxxx" "https://yooy.cc.cd/api/list"
+curl "https://yooy.cc.cd/api/list?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
+        <h3>权限对照</h3>
+        <table style="margin-bottom:16px;">
+          <thead><tr><th>接口</th><th>所需权限</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /api/upload-url</code> · <code>PUT /api/upload</code></td><td><code>upload</code></td></tr>
+            <tr><td><code>GET /api/list</code> · <code>GET /api/meta</code></td><td><code>list</code></td></tr>
+            <tr><td><code>DELETE /api/delete</code></td><td><code>delete</code></td></tr>
+            <tr><td><code>/api/keys</code>（创建 / 改权限 / 吊销）</td><td>仅管理员 Cookie</td></tr>
+          </tbody>
+        </table>
+        <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
+          <li>不带凭证返回 <code>401</code>，权限不足返回 <code>403</code></li>
+          <li><code>GET /i/&lt;key&gt;</code> 图片直链、<code>/api/health</code>、登录相关接口保持公开</li>
+        </ul>
+      </div>
+
       <!-- 直传 第一步 -->
       <div class="card" style="margin-bottom:20px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
           <code style="background:rgba(45,212,191,0.12);color:#5eead4;border-color:rgba(45,212,191,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">POST</code>
           <code style="font-size:1rem;">/api/upload-url</code>
           <span class="badge success"><span>大文件 · 原图</span></span>
+          <span class="badge warning"><span>需 upload 权限</span></span>
         </div>
         <h3>直传第一步：索取签名地址</h3>
         <pre><code>curl -X POST "https://yooy.cc.cd/api/upload-url" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer yoo_..." \
   -d '{"filename":"photo.heic","size":3780000,"contentType":"image/heic"}'</code></pre>
         <h3>响应</h3>
         <pre><code>{
@@ -119,13 +150,15 @@
           <code style="background:rgba(45,212,191,0.12);color:#5eead4;border-color:rgba(45,212,191,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">PUT</code>
           <code style="font-size:1rem;">/api/upload</code>
           <span class="badge"><span>≤950KB · 仅图片</span></span>
+          <span class="badge warning"><span>需 upload 权限</span></span>
         </div>
         <h3>中转：原始字节（推荐）</h3>
         <pre><code>curl -X PUT "https://yooy.cc.cd/api/upload?name=demo.png" \
   -H "Content-Type: image/png" \
+  -H "Authorization: Bearer yoo_..." \
   --data-binary @demo.png</code></pre>
         <h3>中转：multipart（习惯用法也支持）</h3>
-        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" -F "file=@demo.png;type=image/png"</code></pre>
+        <pre><code>curl -X POST "https://yooy.cc.cd/api/upload" -H "Authorization: Bearer yoo_..." -F "file=@demo.png;type=image/png"</code></pre>
         <h3>响应（两种方式一致）</h3>
         <pre><code>{
   "ok": true,
@@ -167,6 +200,7 @@
           <code style="background:rgba(64,158,255,0.12);color:#409eff;border-color:rgba(64,158,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
           <code style="font-size:1rem;">/api/list</code>
           <span class="badge">可选分页</span>
+          <span class="badge warning"><span>需 list 权限</span></span>
         </div>
         <h3>接口说明</h3>
         <p style="color:var(--muted);margin:0 0 16px;">获取所有图片列表，支持分页参数。</p>
@@ -185,7 +219,7 @@
         </table>
 
         <h3>示例请求</h3>
-        <pre><code>curl "https://yooy.cc.cd/api/list?limit=20"</code></pre>
+        <pre><code>curl -H "Authorization: Bearer yoo_..." "https://yooy.cc.cd/api/list?limit=20"</code></pre>
 
         <h3>响应体</h3>
         <pre><code>{
@@ -213,11 +247,11 @@
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
           <code style="background:rgba(64,158,255,0.12);color:#409eff;border-color:rgba(64,158,255,0.25);padding:4px 10px;border-radius:6px;font-size:0.85rem;">GET</code>
           <code style="font-size:1rem;">/api/meta</code>
+          <span class="badge warning"><span>需 list 权限</span></span>
         </div>
         <h3>接口说明</h3>
         <p style="color:var(--muted);margin:0 0 12px;">读取单个对象的存储元信息（实测返回 <code>content-type</code>、<code>content-length</code>、<code>etag</code>、<code>cache-control</code> 等）。</p>
-        <pre><code>curl "https://yooy.cc.cd/api/meta?key=2026/08/6f20444f3562-demo.png"
-curl "https://yooy.cc.cd/api/meta?url=https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png"</code></pre>
+        <pre><code>curl -H "Authorization: Bearer yoo_..." "https://yooy.cc.cd/api/meta?key=2026/08/6f20444f3562-demo.png"</code></pre>
       </div>
 
       <!-- Health Endpoint -->
@@ -242,6 +276,7 @@ curl "https://yooy.cc.cd/api/meta?url=https://yooy.cc.cd/i/2026/08/6f20444f3562-
             <i data-lucide="trash-2" class="icon-xs"></i>
             <span>危险操作</span>
           </span>
+          <span class="badge warning"><span>需 delete 权限</span></span>
         </div>
         <h3>接口说明</h3>
         <p style="color:var(--muted);margin:0 0 16px;">删除对象。可以用 <code>key</code>，也可以直接粘 <code>/i/</code> 完整链接给 <code>url</code>（实测两种都通）。</p>
@@ -258,8 +293,8 @@ curl "https://yooy.cc.cd/api/meta?url=https://yooy.cc.cd/i/2026/08/6f20444f3562-
         </table>
 
         <h3>示例请求</h3>
-        <pre><code>curl -X DELETE "https://yooy.cc.cd/api/delete?key=2026/08/6f20444f3562-demo.png"
-curl -X DELETE "https://yooy.cc.cd/api/delete?url=https%3A%2F%2Fyooy.cc.cd%2Fi%2F2026%2F08%2F6f20444f3562-demo.png"</code></pre>
+        <pre><code>curl -X DELETE -H "Authorization: Bearer yoo_..." "https://yooy.cc.cd/api/delete?key=2026/08/6f20444f3562-demo.png"
+curl -X DELETE -H "Authorization: Bearer yoo_..." "https://yooy.cc.cd/api/delete?url=https%3A%2F%2Fyooy.cc.cd%2Fi%2F2026%2F08%2F6f20444f3562-demo.png"</code></pre>
 
         <h3>响应体</h3>
         <pre><code>{ "ok": true, "key": "2026/08/6f20444f3562-demo.png", "message": "已删除" }</code></pre>
@@ -279,7 +314,7 @@ curl -X DELETE "https://yooy.cc.cd/api/delete?url=https%3A%2F%2Fyooy.cc.cd%2Fi%2
           <li>中转可接受 png / jpg / jpeg / gif / webp / svg / avif / bmp；GIF 与 SVG 前端不做压缩（会丢动画或栅格化），超限请直接走直传</li>
           <li>图片链接的 Content-Type 由 <code>/i/</code> 路由按扩展名决定，与存储层记录的值无关——SDK 的 <code>store.set()</code> 并不接受 <code>contentType</code> 参数</li>
           <li>链接指向 <code>/i/</code> 函数路由，不是静态文件；换图必须换链接，因为响应标了 <code>immutable</code></li>
-          <li>全部接口允许跨域，可被任意前端直接调用（自用，未加鉴权）</li>
+          <li>数据接口需管理员 Cookie 或 API key（见「认证」卡片）；跨域允许携带 <code>Authorization</code> 头；<code>/i/</code> 图片直链保持公开可分享</li>
           <li>删除不可撤销</li>
           <li>存储总量 1GB，单个对象 25MB（平台配额）</li>
         </ul>

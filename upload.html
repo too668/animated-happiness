@@ -123,6 +123,19 @@
       border:1px solid var(--border); border-radius:8px;
     }
     select#uploadMode:focus { outline:none; border-color:var(--brand); }
+    .key-row {
+      display:flex; justify-content:space-between; align-items:center; gap:10px;
+      flex-wrap:wrap; padding:10px 12px; margin-bottom:8px;
+      border:1px solid var(--border); border-radius:8px; background:var(--surface);
+    }
+    .key-info strong { font-size:0.85rem; display:block; }
+    .key-info .muted { font-size:0.72rem; }
+    .key-row .row-inline { align-items:center; }
+    .perm-label {
+      display:inline-flex; align-items:center; gap:4px;
+      font-size:0.78rem; color:var(--text-secondary); cursor:pointer; white-space:nowrap;
+    }
+    .perm-label input { accent-color:var(--brand); cursor:pointer; }
     @media(max-width:480px) {
       .image-grid { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
     }
@@ -284,6 +297,43 @@
         <p>暂无图片，点击上方按钮上传第一张图片吧！</p>
       </div>
     </div>
+
+    <!-- API Keys -->
+    <section class="card" style="margin-top:28px;padding:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <h3 style="margin:0;display:flex;align-items:center;gap:8px;">
+          <i data-lucide="key-round" class="icon-md" style="color:var(--brand);"></i>
+          API Keys
+        </h3>
+        <span class="badge info"><span>脚本 / 外部接入</span></span>
+      </div>
+      <p class="muted" style="font-size:0.85rem;margin-bottom:14px;line-height:1.7;">
+        给脚本或外部程序签发带权限的密钥（上传 / 列表 / 删除）。密钥明文只在创建时显示一次，服务端仅保存哈希，改动立即生效。
+      </p>
+
+      <div id="keySecretBox" style="display:none;border:1px solid var(--warning);background:var(--warning-light);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+        <p style="margin:0 0 8px;font-size:0.82rem;color:var(--warning);font-weight:600;">创建成功，请立即复制保存——密钥只显示这一次：</p>
+        <div class="row-inline">
+          <code id="keySecretText" style="flex:1;min-width:0;word-break:break-all;font-size:0.8rem;">yoo_</code>
+          <button class="small-btn" id="keySecretCopy" type="button" title="复制密钥">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <form id="createKeyForm" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+        <input type="text" id="keyName" class="input" placeholder="名称（如：博客图床脚本）"
+               style="flex:1;min-width:160px;max-width:280px;width:auto;" maxlength="40" />
+        <label class="perm-label"><input type="checkbox" id="permUpload" checked /> 上传</label>
+        <label class="perm-label"><input type="checkbox" id="permList" /> 列表</label>
+        <label class="perm-label"><input type="checkbox" id="permDelete" /> 删除</label>
+        <button class="button primary" type="submit" id="createKeyBtn">
+          <i data-lucide="plus" class="icon-sm"></i> 创建密钥
+        </button>
+      </form>
+
+      <div id="keyList"></div>
+    </section>
   </main>
 
   </div><!-- /#adminApp -->
