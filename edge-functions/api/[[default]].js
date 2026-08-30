@@ -281,25 +281,14 @@ export default async function onRequest(context) {
     // Generate unique key with original extension (URL 子链生成)
     const key = generateKey(filename, mimeType);
 
-    // Upload to EdgeOne Blob Storage
+    // Upload to EdgeOne Blob Storage using direct set
     const store = getStore('functions-test');
-    console.error('[upload] Before createUploadUrl:', {key, mimeType});
-    const presignedUrl = await store.createUploadUrl(key, {
-      contentType: mimeType,
-      expireSeconds: 3600
-    });
-    console.error('[upload] Presigned URL:', presignedUrl.url?.substring(0, 100));
+    console.error('[upload] About to call store.set with key:', key);
 
-    const uploadRes = await fetch(presignedUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': mimeType },
-      body: fileBuffer
+    const result = await store.set(key, fileBuffer, {
+      contentType: mimeType
     });
-
-    if (!uploadRes.ok) {
-      console.error('Storage upload failed:', uploadRes.status, uploadRes.statusText);
-      return json({ ok: false, error: 'Storage upload failed' }, 500);
-    }
+    console.error('[upload] Store set result:', result);
 
     return json({
       ok: true,
