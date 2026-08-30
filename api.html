@@ -64,10 +64,10 @@
         </p>
         <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
           <li><strong style="color:var(--text);">压缩中转</strong> —— 浏览器把文件交给边缘函数，函数再写库。边缘函数的<strong style="color:var(--text);">请求体上限是 1MB</strong>，所以这条路只收图片，且前端会把超过 950KB 的图先压到限内。胜在一条 <code>curl</code> 就能传。</li>
-          <li><strong style="color:var(--text);">原图直传</strong> —— 函数只签发一个几十十字节的临时 PUT 地址，浏览器拿它把字节<strong style="color:var(--text);">直接写进存储</strong>。字节不路过函数，所以 1MB 这个上限根本不会被触发：任意格式、不压缩、单个文件可到 20MB（存储单值上限 25MB）。</li>
+          <li><strong style="color:var(--text);">原图直传</strong> —— 函数只签发一个几十字节的临时 PUT 地址，浏览器拿它把字节<strong style="color:var(--text);">直接写进存储</strong>。字节不路过函数，所以 1MB 这个上限根本不会被触发：任意格式、不压缩、单个文件可到 20MB（存储单值上限 25MB）。</li>
         </ul>
         <p style="color:var(--muted);margin:12px 0 0;font-size:0.85rem;">
-          注：1MB 只限制「进来的请求体」。往外发图片的响应体没有这个限制——实测 2.6MB 原图经 <code>/i/</code> 返回是逐字节完整的，所以大图能正常显示，不需要改用 Cloud Functions。
+          注：1MB 只限制「进来的请求体」。往外发图片的响应体没有这个限制——实测 2.39MB 原图经 <code>/i/</code> 返回是逐字节完整的，所以大图能正常显示。
         </p>
       </div>
 
