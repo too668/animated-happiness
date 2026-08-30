@@ -305,9 +305,11 @@ export async function onRequest(context) {
       const finalName = name || `image${ext || extFromMime(contentType)}`;
       const key = buildKey(finalName);
 
-      // 只能存字节；Content-Type 由 serve 路由按扩展名推导
+      // 只能存字节；Content-Type 由 serve 路由按扩展名推导。
+      // cacheControl 与 /i/ 路由保持一致（1 小时）：目前出图以路由头为准，
+      // 但对象上留个一年值是个地雷，哪天改成透传元信息就会复活「删了还能看一年」。
       await control.set(key, bytes, {
-        cacheControl: 'public, max-age=31536000, immutable'
+        cacheControl: 'public, max-age=3600'
       });
 
       return json({

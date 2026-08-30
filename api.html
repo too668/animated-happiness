@@ -148,12 +148,12 @@
           <strong style="color:var(--text);">Blob 存储不存在任何公开读取地址</strong>——官方 API 里没有 <code>getDownloadUrl</code> 之类的方法，签好的上传地址又只能 PUT，拿来读会 403。所以图片必须由这个路由把字节读出来再吐回去。<strong style="color:var(--text);">你要复制去分享的链接就是它。</strong>
         </p>
         <pre><code>curl -I "https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png"
-# HTTP 200 · Content-Type: image/png · Cache-Control: public, max-age=3600, stale-while-revalidate=86400, immutable</code></pre>
+# HTTP 200 · Content-Type: image/png · Cache-Control: public, max-age=3600</code></pre>
         <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
           <li>Content-Type 按 key 的扩展名推导；扩展名不在图片清单里会以 <code>application/octet-stream</code> 强制下载，避免这个域名被拿来执行上传的 HTML</li>
           <li><code>?download=1</code> 可让图片也变成下载</li>
-          <li>文件名含随机前缀，同一链接的内容不会变，所以标了 <code>immutable</code>——换图必换链接</li>
-          <li><strong style="color:var(--text);">删除不会让链接立刻消失</strong>：原件当场就没，但边缘节点上那份缓存最多还会被命中一小时（<code>max-age=3600</code>），之后回源拿到 404。这个值是实测出来的取舍——曾经打了一年，结果删掉的图能续命一年</li>
+          <li>文件名含随机前缀，换图必换链接</li>
+          <li><strong style="color:var(--text);">删除不会让链接立刻消失</strong>：原件当场就没，但边缘节点上那份缓存最多还会被命中一小时（<code>max-age=3600</code>），之后回源拿到 404。官方文档确认平台<strong style="color:var(--text);">没有「从函数内部刷新指定 URL 边缘缓存」的能力</strong>，所以 max-age 就是删除延迟本身——这个值故意只给 1 小时。曾经打了一年（还带 <code>immutable</code>），结果删掉的图能续命一年</li>
         </ul>
       </div>
 
