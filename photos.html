@@ -357,7 +357,7 @@
   <script>
   (function () {
     var IMAGE_EXT = ['png','jpg','jpeg','gif','webp','svg','avif','bmp'];
-    var ALBUMS_KEY = 'yoo-gallery-albums';
+    var albumsCache = [];
 
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -368,35 +368,36 @@
     }
     function isImage(name) { return IMAGE_EXT.indexOf(extOf(name)) >= 0; }
 
-    function getAlbums() {
-      try { return JSON.parse(localStorage.getItem(ALBUMS_KEY)) || []; } catch { return []; }
-    }
-    function saveAlbums(arr) {
-      localStorage.setItem(ALBUMS_KEY, JSON.stringify(arr));
-    }
-
-    (function migrateOld() {
-      var old = localStorage.getItem('yoo-gallery-source');
-      if (old) {
-        try {
-          var src = JSON.parse(old);
-          if (src && src.path) {
-            var albums = getAlbums();
-            var dup = false;
-            for (var i = 0; i < albums.length; i++) {
-              if (albums[i].storage === (src.storage || 'blob') && albums[i].path === src.path) { dup = true; break; }
-            }
-            if (!dup) { albums.push({ storage: src.storage || 'blob', path: src.path }); saveAlbums(albums); }
-          }
-        } catch (e) {}
-        localStorage.removeItem('yoo-gallery-source');
-      }
-    })();
-
     function albumDisplayName(a) {
       if (a.name) return a.name;
       var parts = a.path.split('/');
       return parts[parts.length - 1] || a.path;
+    }
+
+    function apiAlbums() { return location.origin + '/api/albums'; }
+
+    function loadAlbums() {
+      return fetch(apiAlbums())
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok && Array.isArray(d.albums)) { albumsCache = d.albums; }
+          else { albumsCache = []; }
+          return albumsCache;
+        })
+        .catch(function () { albumsCache = []; return albumsCache; });
+    }
+
+    function apiAddAlbum(storage, path, name) {
+      return fetch(apiAlbums(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storage: storage, path: path, name: name || null })
+      }).then(function (r) { return r.json(); });
+    }
+
+    function apiDeleteAlbum(id) {
+      return fetch(apiAlbums() + '?id=' + encodeURIComponent(id), { method: 'DELETE' })
+        .then(function (r) { return r.json(); });
     }
 
     // ── DOM refs ──
@@ -432,14 +433,12 @@
       currentAlbumIdx = -1;
       viewAlbums.style.display = '';
       viewWaterfall.style.display = 'none';
-      var url = './photos.html';
-      history.replaceState({ album: -1 }, '', url);
-      renderAlbums();
+      history.replaceState({ album: -1 }, '', './photos.html');
+      loadAlbums().then(renderAlbums);
     }
 
     function showAlbum(idx, push) {
-      var albums = getAlbums();
-      if (idx < 0 || idx >= albums.length) { showAlbumList(); return; }
+      if (idx < 0 || idx >= albumsCache.length) { showAlbumList(); return; }
       currentAlbumIdx = idx;
       viewAlbums.style.display = 'none';
       viewWaterfall.style.display = '';
@@ -451,13 +450,13 @@
 
     window.addEventListener('popstate', function (e) {
       var idx = (e.state && typeof e.state.album === 'number') ? e.state.album : getAlbumParam();
-      if (idx >= 0) showAlbum(idx, false);
+      if (idx >= 0) { loadAlbums().then(function () { showAlbum(idx, false); }); }
       else showAlbumList();
     });
 
     // ── Album list rendering ──
     function renderAlbums() {
-      var albums = getAlbums();
+      var albums = albumsCache;
       albumsCount.textContent = albums.length ? albums.length + ' 个图册' : '';
       if (!albums.length) {
         guideCard.classList.remove('hidden');
@@ -470,7 +469,7 @@
         var tag = a.storage === 's3' ? 'S3' : 'Blob';
         var tagClass = a.storage === 's3' ? 's3' : 'blob';
         html += '<div class="album-card" data-idx="' + i + '">' +
-          '<button class="album-delete" data-del="' + i + '" title="移除图册">' +
+          '<button class="album-delete" data-del-id="' + esc(a.id) + '" data-del-idx="' + i + '" title="移除图册">' +
             '<i data-lucide="x" class="icon-xs"></i>' +
           '</button>' +
           '<div class="album-card-head">' +
@@ -506,17 +505,17 @@
 
     // ── Album grid click ──
     albumGrid.addEventListener('click', function (e) {
-      var delBtn = e.target.closest('[data-del]');
+      var delBtn = e.target.closest('[data-del-id]');
       if (delBtn) {
         e.stopPropagation();
-        var di = parseInt(delBtn.dataset.del, 10);
-        var albums = getAlbums();
-        if (di >= 0 && di < albums.length) {
-          if (confirm('移除图册 "' + albumDisplayName(albums[di]) + '"？\n（不会删除文件夹中的文件）')) {
-            albums.splice(di, 1);
-            saveAlbums(albums);
-            renderAlbums();
-            showToast('图册已移除', 'success');
+        var di = parseInt(delBtn.dataset.delIdx, 10);
+        var albumId = delBtn.dataset.delId;
+        if (di >= 0 && di < albumsCache.length) {
+          if (confirm('移除图册 "' + albumDisplayName(albumsCache[di]) + '"？\n（不会删除文件夹中的文件）')) {
+            apiDeleteAlbum(albumId).then(function (d) {
+              if (d && d.ok) { showToast('图册已移除', 'success'); loadAlbums().then(renderAlbums); }
+              else showToast((d && d.error) || '删除失败', 'error');
+            }).catch(function () { showToast('删除失败', 'error'); });
           }
         }
         return;
@@ -530,8 +529,7 @@
 
     // ── Load album images ──
     function loadAlbum(idx) {
-      var albums = getAlbums();
-      var album = albums[idx];
+      var album = albumsCache[idx];
       if (!album) { showAlbumList(); return; }
 
       var name = albumDisplayName(album);
@@ -605,20 +603,15 @@
       var p = document.getElementById('dialogPath').value.trim();
       var n = document.getElementById('dialogName').value.trim();
       if (!p) { showToast('请输入文件夹路径', 'error'); return; }
-      var albums = getAlbums();
-      for (var i = 0; i < albums.length; i++) {
-        if (albums[i].storage === s && albums[i].path === p) {
-          showToast('该图册已存在', 'info');
-          return;
+      apiAddAlbum(s, p, n).then(function (d) {
+        if (d && d.ok) {
+          addDialog.classList.add('hidden');
+          showToast('图册已添加', 'success');
+          loadAlbums().then(renderAlbums);
+        } else {
+          showToast((d && d.error) || '添加失败', 'error');
         }
-      }
-      var entry = { storage: s, path: p };
-      if (n) entry.name = n;
-      albums.push(entry);
-      saveAlbums(albums);
-      addDialog.classList.add('hidden');
-      showToast('图册已添加', 'success');
-      renderAlbums();
+      }).catch(function () { showToast('添加失败', 'error'); });
     });
 
     // ── Refresh ──
@@ -683,9 +676,11 @@
     // ── Init ──
     document.addEventListener('DOMContentLoaded', function () {
       initGate('photosApp', function () {
-        var idx = getAlbumParam();
-        if (idx >= 0) showAlbum(idx, false);
-        else showAlbumList();
+        loadAlbums().then(function () {
+          var idx = getAlbumParam();
+          if (idx >= 0) showAlbum(idx, false);
+          else showAlbumList();
+        });
       });
     });
   })();

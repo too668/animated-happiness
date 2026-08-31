@@ -1162,12 +1162,21 @@ export async function onRequest(context) {
         if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
         try {
           const s3Prefix = `uploads/${folder}/`;
-          const { files } = await s3ListObjects(context, 1000, s3Prefix, '');
-          for (const f of files) {
-            await s3DeleteObject(context, f.key);
-            deleted++;
+          let hasMore = true;
+          while (hasMore) {
+            const { files } = await s3ListObjects(context, 1000, s3Prefix, '');
+            if (!files.length) { hasMore = false; break; }
+            for (const f of files) {
+              await s3DeleteObject(context, f.key);
+              deleted++;
+            }
           }
-          try { await s3DeleteObject(context, s3Prefix + '.folder'); } catch { /* marker may not exist */ }
+          try { await s3DeleteObject(context, `uploads/${folder}/.folder`); } catch { /* ok */ }
+          const { files: check } = await s3ListObjects(context, 5, s3Prefix, '');
+          if (check.length > 0) {
+            for (const f of check) { try { await s3DeleteObject(context, f.key); } catch { /* ok */ } }
+            try { await s3DeleteObject(context, `uploads/${folder}/.folder`); } catch { /* ok */ }
+          }
           return json({ ok: true, folder, deleted, storage: 's3' });
         } catch (e) {
           return fail('删除文件夹失败：' + e.message, 500);
@@ -1176,11 +1185,15 @@ export async function onRequest(context) {
 
       try {
         const blobPrefix = folder + '/';
-        const result = await control.list({ prefix: blobPrefix, limit: LIST_MAX_LIMIT * 2, paginate: false });
-        const keys = (result.blobs || []).map(b => b.key);
-        for (const key of keys) {
-          await control.delete(key);
-          deleted++;
+        let hasMore = true;
+        while (hasMore) {
+          const result = await control.list({ prefix: blobPrefix, limit: LIST_MAX_LIMIT, paginate: false });
+          const keys = (result.blobs || []).map(b => b.key);
+          if (!keys.length) { hasMore = false; break; }
+          for (const key of keys) {
+            await control.delete(key);
+            deleted++;
+          }
         }
         return json({ ok: true, folder, deleted, storage: 'blob' });
       } catch (e) {
@@ -1275,6 +1288,74 @@ export async function onRequest(context) {
         return json({ ok: true, srcKey, dstKey, storage: 'blob' });
       } catch (e) {
         return fail('复制失败：' + e.message, 500);
+      }
+    }
+
+    // ── Albums (Supabase) ─────────────────────────────────────────────
+    function supabaseUrl(context) { return envVar(context, 'SUPABASE_URL'); }
+    function supabaseKey(context) { return envVar(context, 'SUPABASE_SECRET_KEY'); }
+    function supabaseHeaders(context) {
+      return {
+        'apikey': supabaseKey(context),
+        'Authorization': 'Bearer ' + supabaseKey(context),
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      };
+    }
+
+    if (route === 'albums' && request.method === 'GET') {
+      const base = supabaseUrl(context);
+      const key = supabaseKey(context);
+      if (!base || !key) return fail('相册服务未配置', 503);
+      try {
+        const res = await fetch(base + '/rest/v1/albums?order=created_at.asc', {
+          headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
+        });
+        const data = await res.json();
+        return json({ ok: true, albums: data });
+      } catch (e) {
+        return fail('获取相册失败：' + e.message, 500);
+      }
+    }
+
+    if (route === 'albums' && request.method === 'POST') {
+      const base = supabaseUrl(context);
+      const key = supabaseKey(context);
+      if (!base || !key) return fail('相册服务未配置', 503);
+      let body;
+      try { body = await request.json(); } catch { return fail('需要 JSON 请求体'); }
+      const storage = body.storage || 'blob';
+      const path = (body.path || '').trim();
+      const name = (body.name || '').trim() || null;
+      if (!path) return fail('缺少 path');
+      try {
+        const res = await fetch(base + '/rest/v1/albums', {
+          method: 'POST',
+          headers: supabaseHeaders(context),
+          body: JSON.stringify({ storage, path, name })
+        });
+        if (res.status === 409) return fail('该相册已存在', 409);
+        const data = await res.json();
+        return json({ ok: true, album: data[0] || data });
+      } catch (e) {
+        return fail('添加相册失败：' + e.message, 500);
+      }
+    }
+
+    if (route === 'albums' && request.method === 'DELETE') {
+      const base = supabaseUrl(context);
+      const key = supabaseKey(context);
+      if (!base || !key) return fail('相册服务未配置', 503);
+      const id = url.searchParams.get('id');
+      if (!id) return fail('缺少 id');
+      try {
+        await fetch(base + '/rest/v1/albums?id=eq.' + encodeURIComponent(id), {
+          method: 'DELETE',
+          headers: supabaseHeaders(context)
+        });
+        return json({ ok: true });
+      } catch (e) {
+        return fail('删除相册失败：' + e.message, 500);
       }
     }
 
