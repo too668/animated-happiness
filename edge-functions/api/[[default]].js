@@ -336,7 +336,7 @@ async function s3PresignPut(context, pathname, contentType, expireSeconds) {
   return `https://${host}${pathname}?${qs}&X-Amz-Signature=${sig}`;
 }
 
-async function s3ListObjects(context, limit, prefix, delimiter, includeMarkers) {
+async function s3ListObjects(context, limit, prefix, delimiter) {
   const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
   const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
   const host = s3Host(context);
@@ -390,7 +390,6 @@ async function s3ListObjects(context, limit, prefix, delimiter, includeMarkers) 
 
   const xml = await res.text();
   const files = [];
-  const folders = [];
 
   const contentRe = /<Contents>([\s\S]*?)<\/Contents>/g;
   let m;
@@ -400,21 +399,12 @@ async function s3ListObjects(context, limit, prefix, delimiter, includeMarkers) 
     const sizeM = block.match(/<Size>(\d+)<\/Size>/);
     if (keyM) {
       const k = keyM[1];
-      if (k.endsWith('.folder') && !includeMarkers) continue;
+      if (k.endsWith('.folder')) continue;
       files.push({ key: k, size: sizeM ? parseInt(sizeM[1], 10) : null });
     }
   }
 
-  if (delimiter) {
-    const prefixRe = /<CommonPrefixes>\s*<Prefix>([^<]+)<\/Prefix>\s*<\/CommonPrefixes>/g;
-    while ((m = prefixRe.exec(xml))) {
-      const p = m[1].replace(/\/$/, '');
-      const name = p.split('/').pop();
-      if (name) folders.push({ name, path: p });
-    }
-  }
-
-  return { files, folders };
+  return { files };
 }
 
 async function s3DeleteObject(context, key) {
@@ -460,50 +450,6 @@ async function s3DeleteObject(context, key) {
   if (!res.ok && res.status !== 204) {
     const text = await res.text();
     throw new Error(`S3 delete failed ${res.status}: ${text.slice(0, 200)}`);
-  }
-}
-
-async function s3PutEmpty(context, key) {
-  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
-  const host = s3Host(context);
-  const pathname = '/' + key;
-  const d = new Date();
-  const date = s3Ymd(d);
-  const datetime = s3Ymdhms(d);
-  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
-
-  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-
-  const headers = {
-    'host': host,
-    'x-amz-content-sha256': payloadHash,
-    'x-amz-date': datetime
-  };
-
-  const sortedKeys = Object.keys(headers).sort();
-  const signedHeaders = sortedKeys.join(';');
-  const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}`).join('\n') + '\n';
-
-  const canonical = [
-    'PUT', pathname, '',
-    canonicalHeaders, signedHeaders, payloadHash
-  ].join('\n');
-
-  const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
-  const signingKey = await s3SigningKey(secret, date, IDRIVE_REGION);
-  const sig = s3Hex(await s3Hmac(signingKey, toSign));
-
-  const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
-
-  const res = await fetch(`https://${host}${pathname}`, {
-    method: 'PUT',
-    headers: { ...headers, Authorization: auth }
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`S3 put failed ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -772,7 +718,7 @@ export async function onRequest(context) {
         try {
           if (folderMode) {
             const s3Prefix = userPrefix ? `uploads/${userPrefix}/` : 'uploads/';
-            const { files, folders } = await s3ListObjects(context, limit, s3Prefix, '/');
+            const { files } = await s3ListObjects(context, limit, s3Prefix, '/');
             const items = files.map(f => {
               const name = f.key.split('/').pop();
               return {
@@ -784,11 +730,8 @@ export async function onRequest(context) {
                 storage: 's3'
               };
             });
-            const userFolders = folders.map(fo => {
-              const relPath = fo.path.startsWith('uploads/') ? fo.path.slice(8) : fo.path;
-              return { name: fo.name, path: relPath };
-            });
-            return json({ ok: true, folders: userFolders, items, total: items.length, prefix: userPrefix, storage: 's3' });
+            const folders = await dbListFolders(context, 's3', userPrefix);
+            return json({ ok: true, folders, items, total: items.length, prefix: userPrefix, storage: 's3' });
           }
           const { files } = await s3ListObjects(context, limit, '', '');
           const items = files.map(f => {
@@ -813,37 +756,22 @@ export async function onRequest(context) {
         const blobPrefix = userPrefix ? userPrefix + '/' : '';
         const result = await control.list({ prefix: blobPrefix, limit: LIST_MAX_LIMIT, paginate: false });
         const allBlobs = result.blobs || [];
-        const folderSet = new Set();
         const directFiles = [];
 
         for (const blob of allBlobs) {
           const key = blob.key;
           const relative = blobPrefix ? key.slice(blobPrefix.length) : key;
-
-          if (key.endsWith('.folder')) {
-            const slashIdx = relative.indexOf('/');
-            if (slashIdx > 0) folderSet.add(relative.slice(0, slashIdx));
-            continue;
-          }
-
-          const slashIdx = relative.indexOf('/');
-          if (slashIdx > 0) {
-            folderSet.add(relative.slice(0, slashIdx));
-          } else {
-            directFiles.push({
-              key,
-              name: key.split('/').pop(),
-              url: publicUrl(origin, key),
-              type: MIME_BY_EXT[extOf(key)] || 'application/octet-stream',
-              etag: blob.etag || null
-            });
-          }
+          if (relative.includes('/')) continue;
+          directFiles.push({
+            key,
+            name: key.split('/').pop(),
+            url: publicUrl(origin, key),
+            type: MIME_BY_EXT[extOf(key)] || 'application/octet-stream',
+            etag: blob.etag || null
+          });
         }
 
-        const folders = [...folderSet].sort().map(name => ({
-          name,
-          path: blobPrefix ? blobPrefix.slice(0, -1) + '/' + name : name
-        }));
+        const folders = await dbListFolders(context, 'blob', userPrefix);
 
         return json({
           ok: true,
@@ -1064,19 +992,9 @@ export async function onRequest(context) {
       if (!folder || !isValidFolder(folder)) return fail('文件夹路径格式不正确');
       const storage = url.searchParams.get('storage') || 'blob';
 
-      if (storage === 's3') {
-        if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
-        try {
-          await s3PutEmpty(context, `uploads/${folder}/.folder`);
-          return json({ ok: true, folder, storage: 's3' });
-        } catch (e) {
-          return fail('创建文件夹失败：' + e.message, 500);
-        }
-      }
-
       try {
-        await control.set(`${folder}/.folder`, new ArrayBuffer(0));
-        return json({ ok: true, folder, storage: 'blob' });
+        await dbUpsertFolders(context, storage, folder);
+        return json({ ok: true, folder, storage });
       } catch (e) {
         return fail('创建文件夹失败：' + e.message, 500);
       }
@@ -1176,12 +1094,7 @@ export async function onRequest(context) {
               deleted++;
             }
           }
-          try { await s3DeleteObject(context, `uploads/${folder}/.folder`); } catch { /* ok */ }
-          const { files: check } = await s3ListObjects(context, 5, s3Prefix, '');
-          if (check.length > 0) {
-            for (const f of check) { try { await s3DeleteObject(context, f.key); } catch { /* ok */ } }
-            try { await s3DeleteObject(context, `uploads/${folder}/.folder`); } catch { /* ok */ }
-          }
+          await dbDeleteFolders(context, 's3', folder);
           const albumsRemoved = await cascadeDeleteAlbums(context, folder);
           return json({ ok: true, folder, deleted, albumsRemoved, storage: 's3' });
         } catch (e) {
@@ -1201,6 +1114,7 @@ export async function onRequest(context) {
             deleted++;
           }
         }
+        await dbDeleteFolders(context, 'blob', folder);
         const albumsRemoved = await cascadeDeleteAlbums(context, folder);
         return json({ ok: true, folder, deleted, albumsRemoved, storage: 'blob' });
       } catch (e) {
@@ -1237,8 +1151,8 @@ export async function onRequest(context) {
             await s3DeleteObject(context, f.key);
             moved++;
           }
-          try { await s3DeleteObject(context, oldPrefix + '.folder'); } catch { /* ok */ }
-          try { await s3PutEmpty(context, newPrefix + '.folder'); } catch { /* ok */ }
+          await dbDeleteFolders(context, 's3', oldPath);
+          await dbUpsertFolders(context, 's3', newPath);
           return json({ ok: true, oldPath, newPath, moved, storage: 's3' });
         } catch (e) {
           return fail('重命名文件夹失败：' + e.message, 500);
@@ -1259,6 +1173,8 @@ export async function onRequest(context) {
             moved++;
           }
         }
+        await dbDeleteFolders(context, 'blob', oldPath);
+        await dbUpsertFolders(context, 'blob', newPath);
         return json({ ok: true, oldPath, newPath, moved, storage: 'blob' });
       } catch (e) {
         return fail('重命名文件夹失败：' + e.message, 500);
@@ -1308,6 +1224,66 @@ export async function onRequest(context) {
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
       };
+    }
+
+    async function dbListFolders(context, storage, parentPath) {
+      const base = supabaseUrl(context);
+      const key = supabaseKey(context);
+      if (!base || !key) return [];
+      const filter = 'storage=eq.' + encodeURIComponent(storage) +
+        '&parent_path=eq.' + encodeURIComponent(parentPath) +
+        '&order=path.asc';
+      try {
+        const res = await fetch(base + '/rest/v1/folders?' + filter, {
+          headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
+        });
+        const rows = await res.json();
+        return Array.isArray(rows) ? rows.map(r => ({
+          name: r.path.split('/').pop(),
+          path: r.path
+        })) : [];
+      } catch { return []; }
+    }
+
+    async function dbUpsertFolders(context, storage, folderPath) {
+      const base = supabaseUrl(context);
+      const key = supabaseKey(context);
+      if (!base || !key) return;
+      const segments = folderPath.split('/');
+      const rows = [];
+      for (let i = 1; i <= segments.length; i++) {
+        rows.push({
+          storage,
+          path: segments.slice(0, i).join('/'),
+          parent_path: segments.slice(0, i - 1).join('/')
+        });
+      }
+      const res = await fetch(base + '/rest/v1/folders?on_conflict=storage,path', {
+        method: 'POST',
+        headers: { ...supabaseHeaders(context), 'Prefer': 'resolution=merge-duplicates' },
+        body: JSON.stringify(rows)
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error('DB upsert failed: ' + text.slice(0, 200));
+      }
+    }
+
+    async function dbDeleteFolders(context, storage, folderPath) {
+      const base = supabaseUrl(context);
+      const key = supabaseKey(context);
+      if (!base || !key) return 0;
+      const filter = 'storage=eq.' + encodeURIComponent(storage) +
+        '&or=(path.eq.' + encodeURIComponent(folderPath) +
+        ',path.like.' + encodeURIComponent(folderPath + '/%') + ')';
+      try {
+        const res = await fetch(base + '/rest/v1/folders?' + filter, {
+          method: 'DELETE',
+          headers: supabaseHeaders(context)
+        });
+        const deleted = await res.json();
+        return Array.isArray(deleted) ? deleted.length : 0;
+      } catch { return 0; }
     }
 
     async function cascadeDeleteAlbums(context, folderPath) {
@@ -1395,7 +1371,7 @@ export async function onRequest(context) {
         try {
           let hasMore = true;
           while (hasMore) {
-            const { files } = await s3ListObjects(context, 1000, 'uploads/', '', true);
+            const { files } = await s3ListObjects(context, 1000, 'uploads/', '');
             if (!files.length) { hasMore = false; break; }
             for (const f of files) {
               await s3DeleteObject(context, f.key);
@@ -1419,15 +1395,14 @@ export async function onRequest(context) {
         }
       } catch (e) { /* continue */ }
 
-      // Also clear Supabase albums
+      // Clear Supabase albums + folders
       try {
         const base = supabaseUrl(context);
         const key = supabaseKey(context);
         if (base && key) {
-          await fetch(base + '/rest/v1/albums?id=gt.0', {
-            method: 'DELETE',
-            headers: supabaseHeaders(context)
-          });
+          const hdrs = supabaseHeaders(context);
+          await fetch(base + '/rest/v1/albums?id=gt.0', { method: 'DELETE', headers: hdrs });
+          await fetch(base + '/rest/v1/folders?id=gt.0', { method: 'DELETE', headers: hdrs });
         }
       } catch (e) { /* continue */ }
 
