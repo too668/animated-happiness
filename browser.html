@@ -210,7 +210,7 @@
       <div class="breadcrumb" id="breadcrumb"></div>
       <div class="browser-actions">
         <button id="btnSetGallery" class="button secondary" type="button" style="padding:6px 14px;font-size:0.8rem;display:none;">
-          <i data-lucide="image" class="icon-xs"></i> 设为图库
+          <i data-lucide="image-plus" class="icon-xs"></i> 加为图册
         </button>
         <button id="btnUpload" class="button primary" type="button" style="padding:6px 14px;font-size:0.8rem;">
           <i data-lucide="upload" class="icon-xs"></i> 上传
@@ -593,11 +593,21 @@
         .catch(function (e) { showToast('创建失败：' + e.message, 'error'); });
     });
 
-    // ── Set as gallery ──
+    // ── Add as album ──
     document.getElementById('btnSetGallery').addEventListener('click', function () {
       if (!state.path) return;
-      localStorage.setItem('yoo-gallery-source', JSON.stringify({ storage: state.storage, path: state.path }));
-      showToast('已设为图库：' + state.path, 'success');
+      var ALBUMS_KEY = 'yoo-gallery-albums';
+      var albums = [];
+      try { albums = JSON.parse(localStorage.getItem(ALBUMS_KEY)) || []; } catch (e) { albums = []; }
+      for (var i = 0; i < albums.length; i++) {
+        if (albums[i].storage === state.storage && albums[i].path === state.path) {
+          showToast('该图册已存在', 'info');
+          return;
+        }
+      }
+      albums.push({ storage: state.storage, path: state.path });
+      localStorage.setItem(ALBUMS_KEY, JSON.stringify(albums));
+      showToast('已添加图册：' + state.path, 'success');
     });
 
     // ── Refresh ──
