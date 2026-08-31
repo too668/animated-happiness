@@ -15,12 +15,12 @@
           crossorigin="anonymous" defer></script>
   <style>
     .disk-grid {
-      display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));
-      gap:24px; max-width:100%; margin:40px auto 0;
+      display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr));
+      gap:28px; max-width:100%; margin:40px auto 0;
     }
     .disk-card {
       border:2px solid var(--border); border-radius:16px;
-      padding:32px; cursor:pointer;
+      padding:36px; cursor:pointer;
       transition:border-color 0.2s, box-shadow 0.2s, transform 0.15s;
       background:var(--surface); text-decoration:none; color:inherit;
       display:block;
@@ -183,12 +183,12 @@
     (function () {
       document.addEventListener('DOMContentLoaded', function () {
         initGate('galleryApp', function () {
-          fetch(location.origin + '/api/list?limit=1&storage=blob')
+          fetch(location.origin + '/api/list?limit=500&storage=blob')
             .then(function (r) { return r.json(); })
             .then(function (d) {
               if (d && d.ok) document.getElementById('blobCount').textContent = d.total;
             }).catch(function () {});
-          fetch(location.origin + '/api/list?limit=1&storage=s3')
+          fetch(location.origin + '/api/list?limit=500&storage=s3')
             .then(function (r) { return r.json(); })
             .then(function (d) {
               if (d && d.ok) document.getElementById('s3Count').textContent = d.total;

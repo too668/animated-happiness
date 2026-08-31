@@ -552,6 +552,7 @@ footer {
   .nav a span { display: none; }
   .hero { padding: 40px 16px; }
   .section { padding: 32px 0; }
+  .container-wide { padding: 20px 16px 40px; }
 }
 
 /* ── Spinner animation ── */
@@ -718,9 +719,9 @@ footer {
 
 /* ── 图库（瀑布流） ── */
 .container-wide {
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 24px 20px 56px;
+  padding: 28px 40px 56px;
 }
 .masonry {
   columns: 4 260px;

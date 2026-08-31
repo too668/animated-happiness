@@ -46,8 +46,8 @@
     .upload-zone strong { color:var(--brand); }
 
     .browser-grid {
-      display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));
-      gap:14px;
+      display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+      gap:16px;
     }
     .grid-item {
       border:1px solid var(--border); border-radius:10px;
@@ -61,12 +61,12 @@
     }
     .grid-item.folder { cursor:pointer; }
     .folder-thumb {
-      height:120px; display:flex; align-items:center; justify-content:center;
+      height:140px; display:flex; align-items:center; justify-content:center;
       background:var(--brand-light);
     }
     .folder-thumb i { color:var(--brand); }
     .file-thumb {
-      height:120px; overflow:hidden; display:flex; align-items:center; justify-content:center;
+      height:140px; overflow:hidden; display:flex; align-items:center; justify-content:center;
       background:var(--bg);
     }
     .file-thumb img { width:100%; height:100%; object-fit:cover; }
@@ -406,7 +406,9 @@
           thumb +
           '<div class="grid-item-bar"><strong title="' + esc(it.name) + '">' + esc(it.name) + '</strong>' +
           '<div class="item-actions">' +
-            '<button class="item-btn" data-a="copy" data-idx="' + i + '" title="复制链接"><i data-lucide="copy" class="icon-xs"></i></button>' +
+            '<button class="item-btn" data-a="copy" data-idx="' + i + '" title="复制链接"><i data-lucide="link" class="icon-xs"></i></button>' +
+            '<button class="item-btn" data-a="duplicate" data-idx="' + i + '" title="复制副本"><i data-lucide="copy" class="icon-xs"></i></button>' +
+            '<button class="item-btn" data-a="move" data-idx="' + i + '" title="移动到..."><i data-lucide="corner-down-right" class="icon-xs"></i></button>' +
             '<button class="item-btn" data-a="rename" data-idx="' + i + '" title="重命名"><i data-lucide="pencil" class="icon-xs"></i></button>' +
             '<button class="item-btn danger" data-a="delete" data-idx="' + i + '" title="删除"><i data-lucide="trash-2" class="icon-xs"></i></button>' +
           '</div></div></div>';
@@ -424,6 +426,8 @@
         var action = btn.dataset.a;
         var idx = parseInt(btn.dataset.idx, 10);
         if (action === 'copy') copyLink(state.items[idx]);
+        else if (action === 'duplicate') duplicateFile(idx);
+        else if (action === 'move') moveFile(idx);
         else if (action === 'rename') renameFile(idx);
         else if (action === 'delete') deleteFile(idx);
         else if (action === 'rename-folder') renameFolder(idx);
@@ -495,23 +499,84 @@
         .catch(function (e) { showToast('重命名失败：' + e.message, 'error'); });
     }
 
+    function duplicateFile(idx) {
+      var item = state.items[idx];
+      if (!item) return;
+      var dotIdx = item.name.lastIndexOf('.');
+      var base = dotIdx > 0 ? item.name.slice(0, dotIdx) : item.name;
+      var ext = dotIdx > 0 ? item.name.slice(dotIdx) : '';
+      var newName = base + ' - 副本' + ext;
+      var pathParts = item.key.split('/');
+      pathParts[pathParts.length - 1] = newName;
+      var dstKey = pathParts.join('/');
+      fetch(location.origin + '/api/copy?storage=' + state.storage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ srcKey: item.key, dstKey: dstKey })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok) { showToast('已复制：' + newName, 'success'); load(); }
+          else showToast((d && d.error) || '复制失败', 'error');
+        })
+        .catch(function (e) { showToast('复制失败：' + e.message, 'error'); });
+    }
+
+    function moveFile(idx) {
+      var item = state.items[idx];
+      if (!item) return;
+      var hint = state.path || '(根目录)';
+      var target = prompt('输入目标文件夹路径（当前：' + hint + '）：', state.path);
+      if (target === null) return;
+      target = target.trim();
+      var newKey = target ? target + '/' + item.name : item.name;
+      if (newKey === item.key) { showToast('目标位置相同', 'info'); return; }
+      fetch(location.origin + '/api/rename?storage=' + state.storage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldKey: item.key, newKey: newKey })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok) { showToast('已移动', 'success'); load(); }
+          else showToast((d && d.error) || '移动失败', 'error');
+        })
+        .catch(function (e) { showToast('移动失败：' + e.message, 'error'); });
+    }
+
     function renameFolder(idx) {
       var folder = state.folders[idx];
       if (!folder) return;
       var newName = prompt('输入新文件夹名：', folder.name);
       if (!newName || newName === folder.name) return;
-      showToast('文件夹重命名功能开发中', 'info');
+      var oldParts = folder.path.split('/');
+      oldParts[oldParts.length - 1] = newName;
+      var newPath = oldParts.join('/');
+      fetch(location.origin + '/api/rename-folder?storage=' + state.storage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPath: folder.path, newPath: newPath })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok) { showToast('已重命名（' + d.moved + ' 个文件）', 'success'); load(); }
+          else showToast((d && d.error) || '重命名失败', 'error');
+        })
+        .catch(function (e) { showToast('重命名失败：' + e.message, 'error'); });
     }
 
     function deleteFolder(idx) {
       var folder = state.folders[idx];
       if (!folder) return;
-      if (!confirm('确认删除文件夹 "' + folder.name + '"？\n注意：文件夹内的文件不会被自动删除。')) return;
-      var markerKey = folder.path + '/.folder';
-      fetch(location.origin + '/api/delete?key=' + encodeURIComponent(markerKey) + '&storage=' + state.storage, { method: 'DELETE' })
+      if (!confirm('确认删除文件夹 "' + folder.name + '"？\n文件夹内的所有文件都将被删除。')) return;
+      fetch(location.origin + '/api/delete-folder?storage=' + state.storage, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder: folder.path })
+      })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d && d.ok) { showToast('文件夹已删除', 'success'); load(); }
+          if (d && d.ok) { showToast('已删除文件夹（' + d.deleted + ' 个文件）', 'success'); load(); }
           else showToast((d && d.error) || '删除失败', 'error');
         })
         .catch(function (e) { showToast('删除失败：' + e.message, 'error'); });

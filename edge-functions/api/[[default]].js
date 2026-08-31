@@ -1146,6 +1146,138 @@ export async function onRequest(context) {
       return json({ ok: true, key, message: '已删除', storage: 'blob' });
     }
 
+    // ── POST /api/delete-folder ────────────────────────────────────
+    if (request.method === 'POST' && route === 'delete-folder') {
+      const auth = await resolveAuth(context, request, url);
+      const gate = permGate(auth, 'delete');
+      if (gate) return gate;
+      let body;
+      try { body = await request.json(); } catch { return fail('需要 JSON 请求体'); }
+      const folder = String(body.folder || '').trim();
+      if (!folder || !isValidFolder(folder)) return fail('文件夹路径格式不正确');
+      const storage = url.searchParams.get('storage') || 'blob';
+      let deleted = 0;
+
+      if (storage === 's3') {
+        if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
+        try {
+          const s3Prefix = `uploads/${folder}/`;
+          const { files } = await s3ListObjects(context, 1000, s3Prefix, '');
+          for (const f of files) {
+            await s3DeleteObject(context, f.key);
+            deleted++;
+          }
+          try { await s3DeleteObject(context, s3Prefix + '.folder'); } catch { /* marker may not exist */ }
+          return json({ ok: true, folder, deleted, storage: 's3' });
+        } catch (e) {
+          return fail('删除文件夹失败：' + e.message, 500);
+        }
+      }
+
+      try {
+        const blobPrefix = folder + '/';
+        const result = await control.list({ prefix: blobPrefix, limit: LIST_MAX_LIMIT * 2, paginate: false });
+        const keys = (result.blobs || []).map(b => b.key);
+        for (const key of keys) {
+          await control.delete(key);
+          deleted++;
+        }
+        return json({ ok: true, folder, deleted, storage: 'blob' });
+      } catch (e) {
+        return fail('删除文件夹失败：' + e.message, 500);
+      }
+    }
+
+    // ── POST /api/rename-folder ────────────────────────────────────
+    if (request.method === 'POST' && route === 'rename-folder') {
+      const auth = await resolveAuth(context, request, url);
+      const gate1 = permGate(auth, 'upload');
+      if (gate1) return gate1;
+      const gate2 = permGate(auth, 'delete');
+      if (gate2) return gate2;
+      let body;
+      try { body = await request.json(); } catch { return fail('需要 JSON 请求体'); }
+      const oldPath = String(body.oldPath || '').trim();
+      const newPath = String(body.newPath || '').trim();
+      if (!oldPath || !newPath) return fail('缺少 oldPath 或 newPath');
+      if (!isValidFolder(oldPath) || !isValidFolder(newPath)) return fail('文件夹路径格式不正确');
+      if (oldPath === newPath) return fail('新旧路径相同');
+      const storage = url.searchParams.get('storage') || 'blob';
+      let moved = 0;
+
+      if (storage === 's3') {
+        if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
+        try {
+          const oldPrefix = `uploads/${oldPath}/`;
+          const newPrefix = `uploads/${newPath}/`;
+          const { files } = await s3ListObjects(context, 1000, oldPrefix, '');
+          for (const f of files) {
+            const newKey = newPrefix + f.key.slice(oldPrefix.length);
+            await s3CopyObject(context, f.key, newKey);
+            await s3DeleteObject(context, f.key);
+            moved++;
+          }
+          try { await s3DeleteObject(context, oldPrefix + '.folder'); } catch { /* ok */ }
+          try { await s3PutEmpty(context, newPrefix + '.folder'); } catch { /* ok */ }
+          return json({ ok: true, oldPath, newPath, moved, storage: 's3' });
+        } catch (e) {
+          return fail('重命名文件夹失败：' + e.message, 500);
+        }
+      }
+
+      try {
+        const oldBlobPrefix = oldPath + '/';
+        const newBlobPrefix = newPath + '/';
+        const result = await control.list({ prefix: oldBlobPrefix, limit: LIST_MAX_LIMIT * 2, paginate: false });
+        const blobs = result.blobs || [];
+        for (const blob of blobs) {
+          const newKey = newBlobPrefix + blob.key.slice(oldBlobPrefix.length);
+          const data = await control.get(blob.key, { type: 'arrayBuffer' });
+          if (data) {
+            await control.set(newKey, data);
+            await control.delete(blob.key);
+            moved++;
+          }
+        }
+        return json({ ok: true, oldPath, newPath, moved, storage: 'blob' });
+      } catch (e) {
+        return fail('重命名文件夹失败：' + e.message, 500);
+      }
+    }
+
+    // ── POST /api/copy ─────────────────────────────────────────────
+    if (request.method === 'POST' && route === 'copy') {
+      const auth = await resolveAuth(context, request, url);
+      const gate = permGate(auth, 'upload');
+      if (gate) return gate;
+      let body;
+      try { body = await request.json(); } catch { return fail('需要 JSON 请求体'); }
+      const srcKey = keyFromAny(body.srcKey || '');
+      const dstKey = keyFromAny(body.dstKey || '');
+      if (!srcKey || !dstKey) return fail('缺少 srcKey 或 dstKey');
+      if (!isValidKey(srcKey) || !isValidKey(dstKey)) return fail('key 格式不正确');
+      const storage = url.searchParams.get('storage') || 'blob';
+
+      if (storage === 's3') {
+        if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
+        try {
+          await s3CopyObject(context, srcKey, dstKey);
+          return json({ ok: true, srcKey, dstKey, storage: 's3' });
+        } catch (e) {
+          return fail('复制失败：' + e.message, 500);
+        }
+      }
+
+      try {
+        const data = await control.get(srcKey, { type: 'arrayBuffer' });
+        if (!data) return fail('文件不存在', 404);
+        await control.set(dstKey, data);
+        return json({ ok: true, srcKey, dstKey, storage: 'blob' });
+      } catch (e) {
+        return fail('复制失败：' + e.message, 500);
+      }
+    }
+
     return fail('接口不存在', 404);
   } catch (error) {
     return fail(`服务端异常：${error && error.message ? error.message : String(error)}`, 500);
