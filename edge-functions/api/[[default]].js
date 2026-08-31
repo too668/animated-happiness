@@ -1177,7 +1177,8 @@ export async function onRequest(context) {
             for (const f of check) { try { await s3DeleteObject(context, f.key); } catch { /* ok */ } }
             try { await s3DeleteObject(context, `uploads/${folder}/.folder`); } catch { /* ok */ }
           }
-          return json({ ok: true, folder, deleted, storage: 's3' });
+          const albumsRemoved = await cascadeDeleteAlbums(context, folder);
+          return json({ ok: true, folder, deleted, albumsRemoved, storage: 's3' });
         } catch (e) {
           return fail('删除文件夹失败：' + e.message, 500);
         }
@@ -1195,7 +1196,8 @@ export async function onRequest(context) {
             deleted++;
           }
         }
-        return json({ ok: true, folder, deleted, storage: 'blob' });
+        const albumsRemoved = await cascadeDeleteAlbums(context, folder);
+        return json({ ok: true, folder, deleted, albumsRemoved, storage: 'blob' });
       } catch (e) {
         return fail('删除文件夹失败：' + e.message, 500);
       }
@@ -1301,6 +1303,22 @@ export async function onRequest(context) {
         'Content-Type': 'application/json',
         'Prefer': 'return=representation'
       };
+    }
+
+    async function cascadeDeleteAlbums(context, folderPath) {
+      const base = supabaseUrl(context);
+      const key = supabaseKey(context);
+      if (!base || !key) return 0;
+      try {
+        const filter = 'or=(path.eq.' + encodeURIComponent(folderPath) +
+          ',path.like.' + encodeURIComponent(folderPath + '/%') + ')';
+        const res = await fetch(base + '/rest/v1/albums?' + filter, {
+          method: 'DELETE',
+          headers: supabaseHeaders(context)
+        });
+        const deleted = await res.json();
+        return Array.isArray(deleted) ? deleted.length : 0;
+      } catch { return 0; }
     }
 
     if (route === 'albums' && request.method === 'GET') {
