@@ -732,7 +732,7 @@
           if (fo && navigator.clipboard) navigator.clipboard.writeText(fo.path).then(function () { showToast('路径已复制', 'success'); });
           break;
         case 'delete-folder': deleteFolder(idx); break;
-        case 'upload': uploadZone.classList.toggle('hidden'); break;
+        case 'upload': fileInput.click(); break;
         case 'mkdir': doMkdir(); break;
         case 'refresh': load(); break;
         case 'add-album-bg': addAlbumBg(); break;
@@ -788,7 +788,7 @@
       e.stopPropagation();
       closeFab();
       var action = el.dataset.fab;
-      if (action === 'upload') uploadZone.classList.toggle('hidden');
+      if (action === 'upload') fileInput.click();
       else if (action === 'mkdir') doMkdir();
       else if (action === 'refresh') load();
       else if (action === 'add-album') addAlbumBg();
@@ -975,7 +975,7 @@
 
     // ── Upload ──
     document.getElementById('btnUpload').addEventListener('click', function () {
-      uploadZone.classList.toggle('hidden');
+      fileInput.click();
     });
     uploadZone.addEventListener('click', function () { fileInput.click(); });
     uploadZone.addEventListener('dragover', function (e) { e.preventDefault(); uploadZone.classList.add('drag-over'); });

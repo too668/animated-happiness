@@ -225,10 +225,7 @@ function buildKey(name, folder) {
   const ext = extOf(name) || '.bin';
   const base = `${randomId()}-${slugify(name)}${ext}`;
   if (folder) return `${folder}/${base}`;
-  const now = new Date();
-  const yyyy = now.getUTCFullYear();
-  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
-  return `${yyyy}/${mm}/${base}`;
+  return base;
 }
 
 function isValidKey(key) {
@@ -239,7 +236,8 @@ function isValidKey(key) {
 
 function isValidFolder(f) {
   if (!f || typeof f !== 'string' || f.length > 200) return false;
-  return f.split('/').every(s => /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(s));
+  if (f.includes('..') || f.startsWith('/') || f.endsWith('/')) return false;
+  return f.split('/').every(s => s.length > 0 && s.length <= 64 && !/[<>:"|?*\x00-\x1f]/.test(s));
 }
 
 // key 也可能以完整链接的形式被用户粘贴回来
