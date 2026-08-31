@@ -3,18 +3,120 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YOO · 图库</title>
-  <meta name="description" content="YOO 图片托管 - 瀑布流浏览全部图片" />
+  <title>YOO · 磁盘管理</title>
+  <meta name="description" content="YOO 图片托管 - 磁盘管理与瀑布流浏览" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <!-- 钉死版本 + SRI：@latest 会随上游改名图标而悄悄坏掉；1.37.0 是全站图标逐一验证过的版本，
-       integrity 锁死文件字节，CDN 哪怕被换包也加载不了 -->
   <script src="https://unpkg.com/lucide@1.37.0/dist/umd/lucide.min.js"
           integrity="sha384-Q+SBuMPu2+Rlj/ENVdxcp5LNmVj4xEw5M3/6aY4Uf0yd4NQSO/OyjkvdzTnDCxpr"
           crossorigin="anonymous" defer></script>
+  <style>
+    .disk-bar {
+      display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px;
+    }
+    .disk-card {
+      flex:1; min-width:200px; max-width:360px;
+      border:2px solid var(--border); border-radius:12px;
+      padding:20px; cursor:pointer;
+      transition:border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+      background:var(--surface);
+    }
+    .disk-card:hover { border-color:var(--brand); transform:translateY(-2px); }
+    .disk-card.active {
+      border-color:var(--brand);
+      box-shadow:0 0 0 3px rgba(64,158,255,0.15);
+    }
+    .disk-card-head {
+      display:flex; align-items:center; gap:12px; margin-bottom:12px;
+    }
+    .disk-icon {
+      width:44px; height:44px; border-radius:10px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:1.3rem;
+    }
+    .disk-icon.blob { background:rgba(64,158,255,0.12); color:#409EFF; }
+    .disk-icon.s3 { background:rgba(167,139,250,0.12); color:#a78bfa; }
+    .disk-name { font-weight:700; font-size:1rem; }
+    .disk-sub { font-size:0.75rem; color:var(--muted); margin-top:2px; }
+    .disk-stats {
+      display:flex; gap:16px; font-size:0.8rem; color:var(--muted);
+    }
+    .disk-stats strong { color:var(--text); font-size:1.1rem; display:block; }
+
+    .waterfall {
+      columns:4 220px; column-gap:12px;
+    }
+    .waterfall-item {
+      break-inside:avoid; margin-bottom:12px;
+      border-radius:8px; overflow:hidden;
+      position:relative; cursor:pointer;
+      background:var(--surface);
+      transition:transform 0.15s;
+    }
+    .waterfall-item:hover { transform:scale(1.02); }
+    .waterfall-item img {
+      width:100%; display:block; height:auto;
+    }
+    .waterfall-bar {
+      padding:8px 10px; font-size:0.75rem;
+      display:flex; align-items:center; justify-content:space-between; gap:6px;
+    }
+    .waterfall-bar strong {
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;
+    }
+    .waterfall-bar .badge { font-size:0.6rem; flex-shrink:0; }
+
+    /* Full-screen viewer */
+    .viewer {
+      position:fixed; inset:0; z-index:9999;
+      background:rgba(0,0,0,0.92); display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+    }
+    .viewer.hidden { display:none !important; }
+    .viewer-img-wrap {
+      flex:1; display:flex; align-items:center; justify-content:center;
+      overflow:hidden; width:100%; position:relative;
+      touch-action:pan-y;
+    }
+    .viewer-img-wrap img {
+      max-width:95vw; max-height:80vh; object-fit:contain;
+      border-radius:4px; user-select:none; -webkit-user-drag:none;
+      transition:opacity 0.2s;
+    }
+    .viewer-bar {
+      padding:12px 20px; width:100%;
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      background:rgba(0,0,0,0.6); color:#fff; font-size:0.85rem;
+    }
+    .viewer-bar strong { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .viewer-btn {
+      background:rgba(255,255,255,0.12); border:none; color:#fff;
+      width:40px; height:40px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      cursor:pointer; transition:background 0.15s;
+    }
+    .viewer-btn:hover { background:rgba(255,255,255,0.25); }
+    .viewer-nav {
+      position:absolute; top:50%; transform:translateY(-50%);
+      z-index:1;
+    }
+    .viewer-nav.prev { left:12px; }
+    .viewer-nav.next { right:12px; }
+    .viewer-close {
+      position:absolute; top:16px; right:16px; z-index:2;
+    }
+    @media (max-width:600px) {
+      .disk-bar { gap:10px; }
+      .disk-card { min-width:140px; padding:14px; }
+      .disk-icon { width:36px; height:36px; font-size:1rem; }
+      .waterfall { columns:2 140px; column-gap:8px; }
+      .waterfall-item { margin-bottom:8px; }
+      .viewer-nav { display:none; }
+    }
+  </style>
 </head>
 <body>
 
@@ -37,8 +139,8 @@
           <span>API 文档</span>
         </a>
         <a href="./gallery.html" class="active">
-          <i data-lucide="gallery-vertical-end" class="icon-sm"></i>
-          <span>图库</span>
+          <i data-lucide="hard-drive" class="icon-sm"></i>
+          <span>磁盘管理</span>
         </a>
         <a href="./upload.html">
           <i data-lucide="settings" class="icon-sm"></i>
@@ -52,14 +154,14 @@
     </div>
   </header>
 
-  <div id="loginGate" class="container" style="padding:80px 20px;">
+  <div id="loginGate" class="container" style="padding:80px 20px;" hidden>
     <div class="card" style="max-width:400px;margin:0 auto;padding:32px;text-align:center;">
       <svg class="wordmark" viewBox="0 0 124 44" role="img" aria-label="YOO" style="width:76px;height:27px;margin-bottom:14px;">
         <g class="g-y"><path class="stroke wm-y" pathLength="1" d="M7 7Q13 17 21 24M35 7Q29 17 21 24M21 24V37"/></g>
         <g class="g-o1"><circle class="stroke wm-o1" pathLength="1" cx="60" cy="22" r="15.5"/></g>
         <g class="g-o2"><path class="stroke wm-o2" pathLength="1" d="M113.7 13.11A15.5 15.5 0 1 1 102.35 6.56"/><circle class="wm-dot" cx="108.75" cy="8.58" r="3"/></g>
       </svg>
-      <h3 style="margin:0 0 18px;">图库</h3>
+      <h3 style="margin:0 0 18px;">磁盘管理</h3>
       <form id="loginForm" style="display:flex;flex-direction:column;gap:12px;">
         <input type="password" id="loginPassword" class="input" placeholder="输入访问密码"
                autocomplete="current-password" required style="text-align:center;" />
@@ -75,33 +177,83 @@
   <main class="container-wide" id="galleryApp" hidden>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
       <h1 style="margin:0;font-size:1.5rem;display:flex;align-items:center;gap:10px;">
-        <i data-lucide="gallery-vertical-end" class="icon-md" style="color:var(--brand);"></i>
-        图库
+        <i data-lucide="hard-drive" class="icon-md" style="color:var(--brand);"></i>
+        磁盘管理
       </h1>
-      <span id="galleryCount" style="color:var(--muted);font-size:0.8rem;"></span>
       <button id="galleryRefresh" class="button secondary" type="button" style="margin-left:auto;">
         <i data-lucide="refresh-cw" class="icon-sm"></i>
         刷新
       </button>
     </div>
-    <div id="masonry" class="masonry">
-      <div class="empty"><p>加载中...</p></div>
+
+    <div class="disk-bar" id="diskBar">
+      <div class="disk-card active" data-storage="blob">
+        <div class="disk-card-head">
+          <div class="disk-icon blob"><i data-lucide="database" class="icon-md"></i></div>
+          <div>
+            <div class="disk-name">腾讯盘</div>
+            <div class="disk-sub">EdgeOne Blob</div>
+          </div>
+        </div>
+        <div class="disk-stats">
+          <div><strong id="blobCount">-</strong>文件</div>
+        </div>
+      </div>
+      <div class="disk-card" data-storage="s3">
+        <div class="disk-card-head">
+          <div class="disk-icon s3"><i data-lucide="cloud" class="icon-md"></i></div>
+          <div>
+            <div class="disk-name">S3 盘</div>
+            <div class="disk-sub">iDrive e2</div>
+          </div>
+        </div>
+        <div class="disk-stats">
+          <div><strong id="s3Count">-</strong>文件</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="waterfall" class="waterfall">
+      <div class="empty" style="column-span:all;"><p>加载中...</p></div>
     </div>
   </main>
+
+  <!-- Full-screen viewer -->
+  <div id="viewer" class="viewer hidden">
+    <button class="viewer-btn viewer-close" id="viewerClose" title="关闭 (ESC)">
+      <i data-lucide="x" class="icon-sm"></i>
+    </button>
+    <div class="viewer-img-wrap" id="viewerWrap">
+      <button class="viewer-btn viewer-nav prev" id="viewerPrev" title="上一张">
+        <i data-lucide="chevron-left" class="icon-md"></i>
+      </button>
+      <img id="viewerImg" src="" alt="" />
+      <button class="viewer-btn viewer-nav next" id="viewerNext" title="下一张">
+        <i data-lucide="chevron-right" class="icon-md"></i>
+      </button>
+    </div>
+    <div class="viewer-bar">
+      <strong id="viewerName"></strong>
+      <button class="viewer-btn" id="viewerCopy" title="复制链接" style="width:32px;height:32px;">
+        <i data-lucide="copy" class="icon-xs"></i>
+      </button>
+      <span id="viewerIdx" style="font-size:0.75rem;opacity:0.6;"></span>
+    </div>
+  </div>
 
   <footer>
     <div class="container">
       <div class="footer-content">
         <div class="footer-brand">
           <div>
-            <span class="footer-brand-name">YOO · 图片托管</span>
-            <span class="footer-brand-tag">上传即得直链 · 边缘节点出图</span>
+            <span class="footer-brand-name">YOO · 磁盘管理</span>
+            <span class="footer-brand-tag">腾讯盘 + S3 盘 · 边缘节点出图</span>
           </div>
         </div>
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
           <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
-          <a href="./gallery.html"><i data-lucide="gallery-vertical-end" class="icon-xs"></i> 图库</a>
+          <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-xs"></i> 磁盘</a>
           <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
         </nav>
       </div>
@@ -117,12 +269,35 @@
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       }
 
-      var root = document.getElementById('masonry');
-      var count = document.getElementById('galleryCount');
+      var root = document.getElementById('waterfall');
+      var diskBar = document.getElementById('diskBar');
+      var viewer = document.getElementById('viewer');
+      var viewerImg = document.getElementById('viewerImg');
+      var viewerName = document.getElementById('viewerName');
+      var viewerIdx = document.getElementById('viewerIdx');
+      var viewerWrap = document.getElementById('viewerWrap');
 
+      var currentStorage = 'blob';
+      var currentItems = [];
+      var viewIndex = 0;
+
+      // ── Disk switching ──
+      diskBar.addEventListener('click', function (e) {
+        var card = e.target.closest('.disk-card');
+        if (!card) return;
+        var storage = card.dataset.storage;
+        if (storage === currentStorage) return;
+        currentStorage = storage;
+        diskBar.querySelectorAll('.disk-card').forEach(function (c) {
+          c.classList.toggle('active', c.dataset.storage === storage);
+        });
+        load();
+      });
+
+      // ── Load files ──
       function load() {
-        root.innerHTML = '<div class="empty"><p>加载中...</p></div>';
-        fetch(location.origin + '/api/list?limit=500')
+        root.innerHTML = '<div class="empty" style="column-span:all;"><p>加载中...</p></div>';
+        fetch(location.origin + '/api/list?limit=200&storage=' + encodeURIComponent(currentStorage))
           .then(function (r) {
             return r.text().then(function (t) {
               try { return JSON.parse(t); } catch (e) { throw new Error('HTTP ' + r.status); }
@@ -130,30 +305,129 @@
           })
           .then(function (d) {
             if (!d || d.ok !== true) throw new Error((d && d.error) || '列表读取失败');
-            count.textContent = '共 ' + d.total + ' 张';
-            if (!d.items.length) {
-              root.innerHTML = '<div class="empty"><p>暂无图片，去管理后台上传第一张吧！</p></div>';
-              return;
-            }
-            var html = '';
-            d.items.forEach(function (it) {
-              html += '<a class="tile" href="' + esc(it.url) + '" target="_blank" rel="noopener" title="' + esc(it.name) + '">' +
-                '<img src="' + esc(it.url) + '" alt="' + esc(it.name) + '" loading="lazy" />' +
-                '<div class="tile-bar"><strong>' + esc(it.name) + '</strong></div>' +
-                '</a>';
-            });
-            root.innerHTML = html;
+            var countEl = document.getElementById(currentStorage === 's3' ? 's3Count' : 'blobCount');
+            if (countEl) countEl.textContent = d.total;
+            currentItems = d.items || [];
+            render();
           })
           .catch(function (e) {
-            count.textContent = '';
-            root.innerHTML = '<div class="empty"><p>加载失败：' + esc(e.message) + '</p></div>';
+            root.innerHTML = '<div class="empty" style="column-span:all;"><p>加载失败：' + esc(e.message) + '</p></div>';
           });
       }
 
+      function render() {
+        if (!currentItems.length) {
+          root.innerHTML = '<div class="empty" style="column-span:all;"><p>暂无文件，去管理后台上传吧！</p></div>';
+          return;
+        }
+        var html = '';
+        currentItems.forEach(function (it, i) {
+          html += '<div class="waterfall-item" data-idx="' + i + '">' +
+            '<img src="' + esc(it.url) + '" alt="' + esc(it.name) + '" loading="lazy" />' +
+            '<div class="waterfall-bar">' +
+              '<strong>' + esc(it.name) + '</strong>' +
+            '</div></div>';
+        });
+        root.innerHTML = html;
+      }
+
+      // ── Click to open viewer ──
+      root.addEventListener('click', function (e) {
+        var item = e.target.closest('.waterfall-item');
+        if (!item) return;
+        var idx = parseInt(item.dataset.idx, 10);
+        if (isNaN(idx)) return;
+        openViewer(idx);
+      });
+
+      // ── Viewer ──
+      function openViewer(idx) {
+        viewIndex = idx;
+        updateViewer();
+        viewer.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function closeViewer() {
+        viewer.classList.add('hidden');
+        document.body.style.overflow = '';
+      }
+
+      function updateViewer() {
+        var item = currentItems[viewIndex];
+        if (!item) return;
+        viewerImg.src = item.url;
+        viewerImg.alt = item.name;
+        viewerName.textContent = item.name;
+        viewerIdx.textContent = (viewIndex + 1) + ' / ' + currentItems.length;
+      }
+
+      function navPrev() {
+        if (viewIndex > 0) { viewIndex--; updateViewer(); }
+      }
+      function navNext() {
+        if (viewIndex < currentItems.length - 1) { viewIndex++; updateViewer(); }
+      }
+
+      document.getElementById('viewerClose').addEventListener('click', closeViewer);
+      document.getElementById('viewerPrev').addEventListener('click', navPrev);
+      document.getElementById('viewerNext').addEventListener('click', navNext);
+      document.getElementById('viewerCopy').addEventListener('click', function () {
+        var item = currentItems[viewIndex];
+        if (item && navigator.clipboard) {
+          navigator.clipboard.writeText(item.url).then(function () {
+            showToast('链接已复制', 'success');
+          });
+        }
+      });
+
+      // Keyboard
+      document.addEventListener('keydown', function (e) {
+        if (viewer.classList.contains('hidden')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') navPrev();
+        else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navNext();
+      });
+
+      // Touch swipe
+      var touchStartY = 0, touchStartX = 0;
+      viewerWrap.addEventListener('touchstart', function (e) {
+        touchStartY = e.touches[0].clientY;
+        touchStartX = e.touches[0].clientX;
+      }, { passive: true });
+      viewerWrap.addEventListener('touchend', function (e) {
+        var dy = e.changedTouches[0].clientY - touchStartY;
+        var dx = e.changedTouches[0].clientX - touchStartX;
+        if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 50) {
+          if (dy > 0) navPrev(); else navNext();
+        } else if (Math.abs(dx) > 50) {
+          if (dx > 0) navPrev(); else navNext();
+        }
+      }, { passive: true });
+
+      // Close on backdrop click
+      viewer.addEventListener('click', function (e) {
+        if (e.target === viewer || e.target === viewerWrap) closeViewer();
+      });
+
+      // ── Init ──
       document.addEventListener('DOMContentLoaded', function () {
         var b = document.getElementById('galleryRefresh');
-        if (b) b.addEventListener('click', load);
-        initGate('galleryApp', load);
+        if (b) b.addEventListener('click', function () { load(); });
+        initGate('galleryApp', function () {
+          load();
+          // Also pre-load the other disk count
+          fetch(location.origin + '/api/list?limit=1&storage=s3')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d && d.ok) document.getElementById('s3Count').textContent = d.total;
+            }).catch(function () {});
+          fetch(location.origin + '/api/list?limit=1&storage=blob')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d && d.ok) document.getElementById('blobCount').textContent = d.total;
+            }).catch(function () {});
+        });
       });
     })();
   </script>
