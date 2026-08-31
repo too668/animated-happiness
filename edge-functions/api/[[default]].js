@@ -554,6 +554,33 @@ export async function onRequest(context) {
       return json({ ok: true }, 200, { 'Set-Cookie': authCookie('', 0) });
     }
 
+    // ── GET /api/debug-auth (临时调试) ────────────────────────────
+    if (request.method === 'GET' && route === 'debug-auth') {
+      const secret = extractApiKey(request, url);
+      const base = supabaseUrl(context);
+      const key = supabaseKey(context);
+      let hash = null, queryResult = null, queryError = null;
+      if (secret) {
+        hash = await keyHashFor(secret);
+        try {
+          const res = await fetch(base + '/rest/v1/api_keys?secret_hash=eq.' + encodeURIComponent(hash) + '&select=*', {
+            headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
+          });
+          queryResult = await res.json();
+        } catch (e) {
+          queryError = e.message;
+        }
+      }
+      return json({
+        extractedSecret: secret || '(none)',
+        hash,
+        supabaseUrl: base ? base.slice(0, 30) + '...' : '(none)',
+        supabaseKeyPresent: !!key,
+        queryResult,
+        queryError
+      });
+    }
+
     // ── GET /api/health ────────────────────────────────────────────
     if (request.method === 'GET' && route === 'health') {
       let probe;
