@@ -72,6 +72,17 @@ async function sha256Hex(input) {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+function supabaseUrl(context) { return envVar(context, 'SUPABASE_URL'); }
+function supabaseKey(context) { return envVar(context, 'SUPABASE_SECRET_KEY'); }
+function supabaseHeaders(context) {
+  return {
+    'apikey': supabaseKey(context),
+    'Authorization': 'Bearer ' + supabaseKey(context),
+    'Content-Type': 'application/json',
+    'Prefer': 'return=representation'
+  };
+}
+
 const tokenFor = (password) => sha256Hex('yoo-admin:' + password);
 
 function ctEqual(a, b) {
@@ -552,33 +563,6 @@ export async function onRequest(context) {
     // ── POST /api/logout ───────────────────────────────────────────
     if (request.method === 'POST' && route === 'logout') {
       return json({ ok: true }, 200, { 'Set-Cookie': authCookie('', 0) });
-    }
-
-    // ── GET /api/debug-auth (临时调试) ────────────────────────────
-    if (request.method === 'GET' && route === 'debug-auth') {
-      const secret = extractApiKey(request, url);
-      const base = supabaseUrl(context);
-      const key = supabaseKey(context);
-      let hash = null, queryResult = null, queryError = null;
-      if (secret) {
-        hash = await keyHashFor(secret);
-        try {
-          const res = await fetch(base + '/rest/v1/api_keys?secret_hash=eq.' + encodeURIComponent(hash) + '&select=*', {
-            headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
-          });
-          queryResult = await res.json();
-        } catch (e) {
-          queryError = e.message;
-        }
-      }
-      return json({
-        extractedSecret: secret || '(none)',
-        hash,
-        supabaseUrl: base ? base.slice(0, 30) + '...' : '(none)',
-        supabaseKeyPresent: !!key,
-        queryResult,
-        queryError
-      });
     }
 
     // ── GET /api/health ────────────────────────────────────────────
@@ -1242,16 +1226,6 @@ export async function onRequest(context) {
     }
 
     // ── Albums (Supabase) ─────────────────────────────────────────────
-    function supabaseUrl(context) { return envVar(context, 'SUPABASE_URL'); }
-    function supabaseKey(context) { return envVar(context, 'SUPABASE_SECRET_KEY'); }
-    function supabaseHeaders(context) {
-      return {
-        'apikey': supabaseKey(context),
-        'Authorization': 'Bearer ' + supabaseKey(context),
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
-      };
-    }
 
     async function dbListFolders(context, storage, parentPath) {
       const base = supabaseUrl(context);
