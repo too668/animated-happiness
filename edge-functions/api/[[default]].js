@@ -654,6 +654,18 @@ export async function onRequest(context) {
       });
     }
 
+    if (request.method === 'GET' && route === 'env-check') {
+      const env = (context && context.env) || globalThis.env || {};
+      const keys = Object.keys(env);
+      const check = {};
+      ['SUPABASE_URL', 'SUPABASE_SECRET_KEY', 'SUPABASE_ANON_KEY',
+       'SUPABASE_PUBLISHABLE_KEY', 'IDRIVE_BUCKET', 'IDRIVE_ACCESS_KEY_ID'].forEach(function (k) {
+        var v = env[k];
+        check[k] = typeof v === 'string' && v.trim() ? v.trim().slice(0, 8) + '...' : '(empty)';
+      });
+      return json({ ok: true, allKeys: keys.length, check });
+    }
+
     // ── /api/keys（仅管理员 Cookie；API key 不能管理 key）──────────
     if (route === 'keys') {
       const admin = await authState(context, request);
