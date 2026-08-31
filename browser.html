@@ -161,6 +161,10 @@
           <i data-lucide="book-open" class="icon-sm"></i>
           <span>API 文档</span>
         </a>
+        <a href="./photos.html">
+          <i data-lucide="image" class="icon-sm"></i>
+          <span>图库</span>
+        </a>
         <a href="./gallery.html" class="active">
           <i data-lucide="hard-drive" class="icon-sm"></i>
           <span>磁盘管理</span>
@@ -205,6 +209,9 @@
       <span id="storageTag" class="storage-tag blob">Blob</span>
       <div class="breadcrumb" id="breadcrumb"></div>
       <div class="browser-actions">
+        <button id="btnSetGallery" class="button secondary" type="button" style="padding:6px 14px;font-size:0.8rem;display:none;">
+          <i data-lucide="image" class="icon-xs"></i> 设为图库
+        </button>
         <button id="btnUpload" class="button primary" type="button" style="padding:6px 14px;font-size:0.8rem;">
           <i data-lucide="upload" class="icon-xs"></i> 上传
         </button>
@@ -262,6 +269,7 @@
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
           <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
+          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图库</a>
           <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-xs"></i> 磁盘</a>
           <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
         </nav>
@@ -319,6 +327,9 @@
       var tag = document.getElementById('storageTag');
       tag.className = 'storage-tag ' + state.storage;
       tag.textContent = state.storage === 's3' ? 'iDrive S3' : 'Blob';
+
+      var setGalleryBtn = document.getElementById('btnSetGallery');
+      setGalleryBtn.style.display = state.path ? '' : 'none';
 
       var html = '<a href="./gallery.html">' + esc(storageLabel()) + '</a>';
       if (state.path) {
@@ -580,6 +591,13 @@
           else showToast((d && d.error) || '创建失败', 'error');
         })
         .catch(function (e) { showToast('创建失败：' + e.message, 'error'); });
+    });
+
+    // ── Set as gallery ──
+    document.getElementById('btnSetGallery').addEventListener('click', function () {
+      if (!state.path) return;
+      localStorage.setItem('yoo-gallery-source', JSON.stringify({ storage: state.storage, path: state.path }));
+      showToast('已设为图库：' + state.path, 'success');
     });
 
     // ── Refresh ──
