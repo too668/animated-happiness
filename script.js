@@ -193,7 +193,7 @@ function uploadRelay(file) {
   });
 }
 
-function uploadFiles(files, mode) {
+function uploadFiles(files) {
   if (!files || !files.length) { showToast('请选择文件', 'error'); return Promise.resolve(); }
   var buttons = document.querySelectorAll('#dropZone button, #uploadBtn');
   Array.prototype.forEach.call(buttons, function (b) { b.disabled = true; });
@@ -208,8 +208,7 @@ function uploadFiles(files, mode) {
   Array.prototype.forEach.call(files, function (file, i) {
     chain = chain.then(function () {
       if (zoneText) zoneText.textContent = '上传中 ' + (i + 1) + '/' + files.length + '：' + file.name;
-      var task = mode === 'direct' ? uploadDirect(file) : uploadRelay(file);
-      return task.then(function (item) {
+      return uploadDirect(file).then(function (item) {
         list.unshift({ key: item.key, url: item.url, name: item.name, size: item.size, uploadedAt: Date.now() });
         ok++;
       }).catch(function (e) {
@@ -421,32 +420,27 @@ function refreshIcons() {
 
 // ── EVENTS ──
 function attachEvents() {
-  var modeSelect = document.getElementById('uploadMode');
+  var storageSelect = document.getElementById('storageSelect');
   var modeHint = document.getElementById('modeHint');
   var dropHint = document.getElementById('dropHint');
 
-  var MODE_COPY = {
-    direct: '<strong>原图直传</strong>：浏览器把文件直接写进 Blob 存储，不经过函数，所以什么格式都行、不压缩、保留原图，单个文件可到 20MB。',
-    relay: '<strong>压缩中转</strong>：文件先经过边缘函数再入库，边缘函数请求体上限只有 1MB，所以这条只收图片、超过 950KB 会自动压到限内（GIF / SVG 不能压，请改用直传）。好处是一条 <code>curl</code> 就能传图。'
-  };
-
-  function applyMode() {
-    var m = modeSelect ? modeSelect.value : 'direct';
-    if (modeHint) modeHint.innerHTML = MODE_COPY[m];
-    if (dropHint) {
-      dropHint.textContent = m === 'direct'
-        ? '任意格式 · 可多选 · 单个 ≤20MB'
-        : '仅图片 · 可多选 · 超过 950KB 自动压缩';
+  function applyStorage() {
+    var s = storageSelect ? storageSelect.value : 'blob';
+    if (modeHint) {
+      modeHint.innerHTML = s === 's3'
+        ? '<strong>iDrive e2 S3</strong>：直传到 S3 桶，最大 5GB，任意格式。'
+        : '<strong>腾讯云 Blob</strong>：直传到 Blob 存储，最大 20MB，任意格式。';
     }
+    if (dropHint) dropHint.textContent = '任意格式 · 可多选';
+    syncFromServer();
   }
 
-  if (modeSelect) modeSelect.addEventListener('change', applyMode);
-  applyMode();
+  if (storageSelect) storageSelect.addEventListener('change', applyStorage);
 
   document.addEventListener('change', function (e) {
     if (e.target && e.target.id === 'uploadInput') {
       if (e.target.files.length) {
-        uploadFiles(e.target.files, modeSelect ? modeSelect.value : 'direct');
+        uploadFiles(e.target.files);
         e.target.value = '';
       }
     }
@@ -484,7 +478,7 @@ function attachEvents() {
       e.preventDefault();
       dz.classList.remove('drag-over');
       if (e.dataTransfer && e.dataTransfer.files.length) {
-        uploadFiles(e.dataTransfer.files, modeSelect ? modeSelect.value : 'direct');
+        uploadFiles(e.dataTransfer.files);
       }
     });
   }
@@ -675,7 +669,7 @@ function initGate(appId, onAuthed) {
   var btn = document.getElementById('loginBtn');
 
   function enter() {
-    gate.style.display = 'none';
+    gate.hidden = true;
     app.hidden = false;
     onAuthed();
   }
@@ -722,10 +716,11 @@ function initGate(appId, onAuthed) {
     if (d && d.ok && d.authed) {
       enter();
     } else {
+      gate.hidden = false;
       setTimeout(function () { input.focus(); }, 50);
     }
   }).catch(function () {
-    // 问不到后端时保守显示门禁
+    gate.hidden = false;
   });
 }
 
