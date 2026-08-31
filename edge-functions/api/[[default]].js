@@ -336,7 +336,7 @@ async function s3PresignPut(context, pathname, contentType, expireSeconds) {
   return `https://${host}${pathname}?${qs}&X-Amz-Signature=${sig}`;
 }
 
-async function s3ListObjects(context, limit, prefix, delimiter) {
+async function s3ListObjects(context, limit, prefix, delimiter, includeMarkers) {
   const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
   const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
   const host = s3Host(context);
@@ -400,7 +400,7 @@ async function s3ListObjects(context, limit, prefix, delimiter) {
     const sizeM = block.match(/<Size>(\d+)<\/Size>/);
     if (keyM) {
       const k = keyM[1];
-      if (k.endsWith('.folder')) continue;
+      if (k.endsWith('.folder') && !includeMarkers) continue;
       files.push({ key: k, size: sizeM ? parseInt(sizeM[1], 10) : null });
     }
   }
@@ -1373,6 +1373,56 @@ export async function onRequest(context) {
       } catch (e) {
         return fail('删除相册失败：' + e.message, 500);
       }
+    }
+
+    // ── POST /api/force-clean（临时：清空所有存储）──
+    if (request.method === 'POST' && route === 'force-clean') {
+      const admin = await authState(context, request);
+      if (!admin.authed) return fail('仅管理员可操作', 401);
+      let deleted = 0;
+
+      // S3: list and delete everything under uploads/
+      if (isS3Configured(context)) {
+        try {
+          let hasMore = true;
+          while (hasMore) {
+            const { files } = await s3ListObjects(context, 1000, 'uploads/', '', true);
+            if (!files.length) { hasMore = false; break; }
+            for (const f of files) {
+              await s3DeleteObject(context, f.key);
+              deleted++;
+            }
+          }
+        } catch (e) { /* continue */ }
+      }
+
+      // Blob: list and delete everything
+      try {
+        let hasMore = true;
+        while (hasMore) {
+          const result = await control.list({ limit: LIST_MAX_LIMIT, paginate: false });
+          const blobs = result.blobs || [];
+          if (!blobs.length) { hasMore = false; break; }
+          for (const b of blobs) {
+            await control.delete(b.key);
+            deleted++;
+          }
+        }
+      } catch (e) { /* continue */ }
+
+      // Also clear Supabase albums
+      try {
+        const base = supabaseUrl(context);
+        const key = supabaseKey(context);
+        if (base && key) {
+          await fetch(base + '/rest/v1/albums?id=gt.0', {
+            method: 'DELETE',
+            headers: supabaseHeaders(context)
+          });
+        }
+      } catch (e) { /* continue */ }
+
+      return json({ ok: true, deleted, message: '所有存储已清空' });
     }
 
     return fail('接口不存在', 404);
