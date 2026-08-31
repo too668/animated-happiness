@@ -190,6 +190,45 @@
     .storage-tag.blob { background:rgba(64,158,255,0.12); color:#409EFF; }
     .storage-tag.s3 { background:rgba(167,139,250,0.12); color:#a78bfa; }
 
+    /* ── FAB ── */
+    .fab-wrap { display:none; }
+    @media (max-width:600px) {
+      .fab-wrap {
+        display:block; position:fixed; bottom:24px; right:24px; z-index:100;
+      }
+    }
+    .fab-btn {
+      width:56px; height:56px; border-radius:50%; border:none;
+      background:var(--brand); color:#fff; cursor:pointer;
+      box-shadow:0 4px 20px rgba(0,0,0,0.25);
+      display:flex; align-items:center; justify-content:center;
+      transition:transform 0.25s cubic-bezier(0.34,1.56,0.64,1), background 0.2s;
+    }
+    .fab-btn.open { transform:rotate(45deg); background:var(--danger); }
+    .fab-btn svg { transition:transform 0.25s; pointer-events:none; }
+    .fab-list {
+      position:absolute; bottom:68px; right:0;
+      display:flex; flex-direction:column; gap:10px;
+      align-items:flex-end;
+    }
+    .fab-item {
+      display:flex; align-items:center; gap:10px;
+      padding:10px 16px; border-radius:28px;
+      background:var(--surface); border:1px solid var(--border);
+      box-shadow:0 2px 12px rgba(0,0,0,0.12);
+      cursor:pointer; font-size:0.85rem; white-space:nowrap;
+      opacity:0; transform:translateY(12px) scale(0.9);
+      transition:opacity 0.2s, transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    .fab-wrap.open .fab-item {
+      opacity:1; transform:translateY(0) scale(1);
+    }
+    .fab-wrap.open .fab-item:nth-child(1) { transition-delay:0.05s; }
+    .fab-wrap.open .fab-item:nth-child(2) { transition-delay:0.1s; }
+    .fab-wrap.open .fab-item:nth-child(3) { transition-delay:0.15s; }
+    .fab-wrap.open .fab-item:nth-child(4) { transition-delay:0.2s; }
+    .fab-item:active { transform:scale(0.95); }
+
     /* ── Tablet ── */
     @media (max-width:1023px) {
       .browser-grid { grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; }
@@ -299,6 +338,26 @@
   </main>
 
   <div id="ctxMenu" class="ctx-menu" style="display:none;"></div>
+
+  <div id="fabWrap" class="fab-wrap">
+    <div class="fab-list">
+      <div class="fab-item" data-fab="add-album" id="fabAddAlbum" style="display:none;">
+        <i data-lucide="image-plus" class="icon-xs"></i> <span>加为图册</span>
+      </div>
+      <div class="fab-item" data-fab="refresh">
+        <i data-lucide="refresh-cw" class="icon-xs"></i> <span>刷新</span>
+      </div>
+      <div class="fab-item" data-fab="mkdir">
+        <i data-lucide="folder-plus" class="icon-xs"></i> <span>新建文件夹</span>
+      </div>
+      <div class="fab-item" data-fab="upload">
+        <i data-lucide="upload" class="icon-xs"></i> <span>上传文件</span>
+      </div>
+    </div>
+    <button class="fab-btn" id="fabBtn" type="button">
+      <i data-lucide="plus" class="icon-md"></i>
+    </button>
+  </div>
 
   <div id="viewer" class="viewer hidden">
     <button class="viewer-btn viewer-close" id="viewerClose" title="关闭 (ESC)">
@@ -710,30 +769,29 @@
       showCtx(e.clientX, e.clientY, bgMenuItems());
     });
 
-    // ── Mobile long-press context menu ──
-    var longPressTimer = null;
-    grid.addEventListener('touchstart', function (e) {
-      if (window.innerWidth >= 600) return;
-      var item = e.target.closest('.grid-item');
-      longPressTimer = setTimeout(function () {
-        if (navigator.vibrate) navigator.vibrate(30);
-        if (item) {
-          var type = item.dataset.type;
-          var idx = parseInt(item.dataset.idx, 10);
-          ctxTargetIdx = idx;
-          if (type === 'file') showCtx(0, 0, fileMenuItems(idx));
-          else showCtx(0, 0, folderMenuItems(idx));
-        } else {
-          ctxTargetIdx = -1;
-          showCtx(0, 0, bgMenuItems());
-        }
-      }, 500);
-    }, { passive: true });
-    grid.addEventListener('touchmove', function () {
-      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-    }, { passive: true });
-    grid.addEventListener('touchend', function () {
-      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    // ── FAB (mobile) ──
+    var fabWrap = document.getElementById('fabWrap');
+    var fabBtn = document.getElementById('fabBtn');
+    var fabAddAlbum = document.getElementById('fabAddAlbum');
+    function closeFab() { fabWrap.classList.remove('open'); fabBtn.classList.remove('open'); }
+    fabBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var isOpen = fabWrap.classList.toggle('open');
+      fabBtn.classList.toggle('open', isOpen);
+      fabAddAlbum.style.display = state.path ? '' : 'none';
+      if (isOpen && window.lucide) window.lucide.createIcons();
+    });
+    document.addEventListener('click', function () { closeFab(); });
+    fabWrap.querySelector('.fab-list').addEventListener('click', function (e) {
+      var el = e.target.closest('.fab-item');
+      if (!el) return;
+      e.stopPropagation();
+      closeFab();
+      var action = el.dataset.fab;
+      if (action === 'upload') uploadZone.classList.toggle('hidden');
+      else if (action === 'mkdir') doMkdir();
+      else if (action === 'refresh') load();
+      else if (action === 'add-album') addAlbumBg();
     });
 
     // ── Grid click handler ──

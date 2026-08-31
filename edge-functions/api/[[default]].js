@@ -99,32 +99,10 @@ const authCookie = (token, maxAge) =>
   `${AUTH_COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax; Secure`;
 
 // ── API key ─────────────────────────────────────────────────
-// 记录存 Upstash Redis（环境变量 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN），
-// 与图片桶完全隔离：平台凭证哪怕泄露，key 记录也不会跟着漏。
+// 记录存 Supabase api_keys 表（secret_hash + perms + name），
 // 库里只有 secret 的 sha256 哈希，明文只在创建时返回一次。
-// redis key = 'yookey:' + sha256('yoo-key:'+secret)：拿到密钥一次 GET 就能定位，无需扫描；
-// 'yookeys:index'（SET）维护记录全集，供面板列表。Redis 强一致，吊销立即生效。
-const KEY_PREFIX = 'yookey:';
-const KEY_INDEX = 'yookeys:index';
 const VALID_PERMS = ['upload', 'list', 'delete'];
 const KEY_RE_SECRET = /^yoo_[0-9a-f]{24}$/i;
-
-// Upstash REST：POST 命令数组，响应里取 result 字段
-async function redis(context, cmd) {
-  const url = envVar(context, 'UPSTASH_REDIS_REST_URL');
-  const token = envVar(context, 'UPSTASH_REDIS_REST_TOKEN');
-  if (!url || !token) {
-    throw new Error('Redis 未配置：缺环境变量 UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN');
-  }
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(cmd)
-  });
-  const data = await r.json();
-  if (data && data.error) throw new Error('Redis: ' + data.error);
-  return data ? data.result : null;
-}
 
 const keyHashFor = (secret) => sha256Hex('yoo-key:' + secret);
 
@@ -152,7 +130,7 @@ function normalizePerms(input) {
   return out;
 }
 
-// 身份解析：管理 Cookie 全权限；否则查 key；都没有 → role:null
+// 身份解析：管理 Cookie 全权限；否则查 Supabase api_keys 表；都没有 → role:null
 async function resolveAuth(context, request, url) {
   const admin = await authState(context, request);
   if (admin.authed) return { role: 'admin', perms: VALID_PERMS };
@@ -160,8 +138,18 @@ async function resolveAuth(context, request, url) {
   if (!secret) return { role: null, perms: [] };
   let record = null;
   try {
-    const raw = await redis(context, ['GET', KEY_PREFIX + (await keyHashFor(secret))]);
-    record = raw ? JSON.parse(raw) : null;
+    const base = supabaseUrl(context);
+    const key = supabaseKey(context);
+    if (!base || !key) return { role: null, perms: [] };
+    const hash = await keyHashFor(secret);
+    const res = await fetch(base + '/rest/v1/api_keys?secret_hash=eq.' + encodeURIComponent(hash) + '&select=*', {
+      headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
+    });
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0) {
+      record = rows[0];
+      record.perms = typeof record.perms === 'string' ? JSON.parse(record.perms) : record.perms;
+    }
   } catch { /* 存储异常按未授权处理 */ }
   if (!record) return { role: null, perms: [] };
   return { role: 'key', perms: normalizePerms(record.perms) || [], id: record.id };
@@ -177,18 +165,22 @@ function permGate(auth, perm) {
   return null;
 }
 
-// 面板按 id 改/吊销：索引 + MGET 定位记录
+// 面板按 id 改/吊销：Supabase 直接查
 async function findKeyRecord(context, id) {
-  const hashes = (await redis(context, ['SMEMBERS', KEY_INDEX])) || [];
-  if (!hashes.length) return null;
-  const recs = (await redis(context, ['MGET', ...hashes])) || [];
-  for (let i = 0; i < hashes.length; i++) {
-    if (!recs[i]) continue;
-    try {
-      const rec = JSON.parse(recs[i]);
-      if (rec && rec.id === id) return { rkey: hashes[i], rec };
-    } catch { /* 单条坏数据跳过 */ }
-  }
+  try {
+    const base = supabaseUrl(context);
+    const key = supabaseKey(context);
+    if (!base || !key) return null;
+    const res = await fetch(base + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id) + '&select=*', {
+      headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
+    });
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0) {
+      const rec = rows[0];
+      rec.perms = typeof rec.perms === 'string' ? JSON.parse(rec.perms) : rec.perms;
+      return { rec };
+    }
+  } catch { /* ignore */ }
   return null;
 }
 
@@ -629,9 +621,18 @@ export async function onRequest(context) {
       }
       let keysProbe;
       try {
-        keysProbe = { ok: (await redis(context, ['PING'])) === 'PONG', backend: 'upstash-redis' };
+        const sbase = supabaseUrl(context);
+        const skey = supabaseKey(context);
+        if (sbase && skey) {
+          const r = await fetch(sbase + '/rest/v1/albums?limit=0', {
+            headers: { 'apikey': skey, 'Authorization': 'Bearer ' + skey }
+          });
+          keysProbe = { ok: r.ok, backend: 'supabase' };
+        } else {
+          keysProbe = { ok: false, backend: 'supabase', error: '未配置' };
+        }
       } catch (e) {
-        keysProbe = { ok: false, backend: 'upstash-redis', error: e.message };
+        keysProbe = { ok: false, backend: 'supabase', error: e.message };
       }
       return json({
         ok: true,
@@ -658,103 +659,102 @@ export async function onRequest(context) {
     if (route === 'keys') {
       const admin = await authState(context, request);
       if (!admin.authed) return fail('仅管理员可操作：请先在管理后台登录', 401);
+      const sbase = supabaseUrl(context);
+      const skey = supabaseKey(context);
+      if (!sbase || !skey) return fail('数据库未配置', 503);
+      const sHeaders = supabaseHeaders(context);
 
-      // GET —— 列表：索引集合拿全部 redis key，一次 MGET 取记录
+      // GET —— 列表
       if (request.method === 'GET') {
-        const hashes = (await redis(context, ['SMEMBERS', KEY_INDEX])) || [];
-        const keys = [];
-        if (hashes.length) {
-          const recs = (await redis(context, ['MGET', ...hashes])) || [];
-          for (const raw of recs) {
-            if (!raw) continue;
-            try {
-              const rec = JSON.parse(raw);
-              if (rec && rec.id) {
-                keys.push({
-                  id: rec.id,
-                  name: rec.name || '',
-                  prefix: rec.prefix || 'yoo_',
-                  perms: normalizePerms(rec.perms) || [],
-                  createdAt: rec.createdAt || null
-                });
-              }
-            } catch { /* 单条坏数据跳过 */ }
-          }
+        try {
+          const res = await fetch(sbase + '/rest/v1/api_keys?order=created_at.desc&select=*', {
+            headers: { 'apikey': skey, 'Authorization': 'Bearer ' + skey }
+          });
+          const rows = await res.json();
+          const keys = (Array.isArray(rows) ? rows : []).map(function (r) {
+            var perms = r.perms;
+            if (typeof perms === 'string') try { perms = JSON.parse(perms); } catch { perms = []; }
+            return {
+              id: r.id,
+              name: r.name || '',
+              prefix: r.name ? r.name.slice(0, 8) : 'yoo_',
+              perms: normalizePerms(perms) || [],
+              createdAt: r.created_at || null
+            };
+          });
+          return json({ ok: true, keys }, 200, { 'Cache-Control': 'no-store' });
+        } catch (e) {
+          return fail('查询密钥失败：' + e.message, 500);
         }
-        keys.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        return json({ ok: true, keys }, 200, { 'Cache-Control': 'no-store' });
       }
 
       // POST {name, perms} —— 创建，明文密钥只返回这一次
       if (request.method === 'POST') {
         let body;
-        try {
-          body = await request.json();
-        } catch {
-          return fail('需要 JSON 请求体');
-        }
+        try { body = await request.json(); } catch { return fail('需要 JSON 请求体'); }
         const perms = normalizePerms(body.perms);
         if (!perms || !perms.length) return fail('权限至少选择一项（upload / list / delete）');
         const name = String(body.name || '').trim().slice(0, 40) || '未命名';
-
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const secret = 'yoo_' + randomHex(12);
-          const record = {
-            id: randomId(),
-            name,
-            perms,
-            createdAt: Date.now(),
-            prefix: secret.slice(0, 8) // 供面板展示 yoo_xxxx····
-          };
-          // NX：极小概率撞键时返回 null，换个密钥再来
-          const rkey = KEY_PREFIX + (await keyHashFor(secret));
-          const set = await redis(context, ['SET', rkey, JSON.stringify(record), 'NX']);
-          if (set) {
-            await redis(context, ['SADD', KEY_INDEX, rkey]);
-            return json(
-              { ok: true, id: record.id, name, perms, secret, createdAt: record.createdAt },
-              200,
-              { 'Cache-Control': 'no-store' }
-            );
-          }
+        const id = randomId();
+        const secret = 'yoo_' + randomHex(12);
+        const secretHash = await keyHashFor(secret);
+        try {
+          const res = await fetch(sbase + '/rest/v1/api_keys', {
+            method: 'POST',
+            headers: sHeaders,
+            body: JSON.stringify({ id, secret_hash: secretHash, name, perms })
+          });
+          if (res.status === 409) return fail('密钥冲突，请重试', 409);
+          const data = await res.json();
+          return json({ ok: true, id, name, perms, secret, createdAt: (data[0] || data).created_at }, 200, { 'Cache-Control': 'no-store' });
+        } catch (e) {
+          return fail('创建密钥失败：' + e.message, 500);
         }
-        return fail('密钥创建失败，请重试', 500);
       }
 
       // PATCH {id, perms?, name?} —— 改权限 / 改名
       if (request.method === 'PATCH') {
         let body;
-        try {
-          body = await request.json();
-        } catch {
-          return fail('需要 JSON 请求体');
-        }
+        try { body = await request.json(); } catch { return fail('需要 JSON 请求体'); }
         const id = String(body.id || '');
         if (!id) return fail('缺少参数 id');
-        const found = await findKeyRecord(context, id);
-        if (!found) return fail('API key 不存在', 404);
-        const rec = found.rec;
+        const update = {};
         if (body.perms !== undefined) {
           const perms = normalizePerms(body.perms);
           if (!perms || !perms.length) return fail('权限至少选择一项（upload / list / delete）');
-          rec.perms = perms;
+          update.perms = perms;
         }
         if (body.name !== undefined) {
-          rec.name = String(body.name || '').trim().slice(0, 40) || '未命名';
+          update.name = String(body.name || '').trim().slice(0, 40) || '未命名';
         }
-        await redis(context, ['SET', found.rkey, JSON.stringify(rec)]);
-        return json({ ok: true, id: rec.id, name: rec.name, perms: rec.perms });
+        if (!Object.keys(update).length) return fail('没有要更新的字段');
+        try {
+          const res = await fetch(sbase + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id), {
+            method: 'PATCH',
+            headers: sHeaders,
+            body: JSON.stringify(update)
+          });
+          const data = await res.json();
+          const rec = Array.isArray(data) && data[0];
+          return json({ ok: true, id, name: rec ? rec.name : update.name, perms: rec ? rec.perms : update.perms });
+        } catch (e) {
+          return fail('更新密钥失败：' + e.message, 500);
+        }
       }
 
       // DELETE ?id= —— 吊销
       if (request.method === 'DELETE') {
         const id = url.searchParams.get('id') || '';
         if (!id) return fail('缺少参数 id');
-        const found = await findKeyRecord(context, id);
-        if (!found) return fail('API key 不存在', 404);
-        await redis(context, ['DEL', found.rkey]);
-        await redis(context, ['SREM', KEY_INDEX, found.rkey]);
-        return json({ ok: true, id, message: '已吊销' });
+        try {
+          await fetch(sbase + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id), {
+            method: 'DELETE',
+            headers: sHeaders
+          });
+          return json({ ok: true, id, message: '已吊销' });
+        } catch (e) {
+          return fail('删除密钥失败：' + e.message, 500);
+        }
       }
     }
 
