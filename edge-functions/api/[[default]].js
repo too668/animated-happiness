@@ -229,18 +229,25 @@ function randomHex(byteCount) {
 const randomId = () => randomHex(6);
 
 // key 形如 2026/08/4f9a2c7b1e3d-my-photo.png
-function buildKey(name) {
+function buildKey(name, folder) {
+  const ext = extOf(name) || '.bin';
+  const base = `${randomId()}-${slugify(name)}${ext}`;
+  if (folder) return `${folder}/${base}`;
   const now = new Date();
   const yyyy = now.getUTCFullYear();
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const ext = extOf(name) || '.bin';
-  return `${yyyy}/${mm}/${randomId()}-${slugify(name)}${ext}`;
+  return `${yyyy}/${mm}/${base}`;
 }
 
 function isValidKey(key) {
-  return typeof key === 'string' &&
-    key.length <= 200 &&
-    /^\d{4}\/\d{2}\/[0-9a-f]{12}(-[a-z0-9.-]{1,48})?\.[a-z0-9]{1,8}$/.test(key);
+  return typeof key === 'string' && key.length <= 300 &&
+    /^[a-zA-Z0-9._/-]+$/.test(key) && !key.includes('..') &&
+    !key.startsWith('/') && !key.endsWith('/');
+}
+
+function isValidFolder(f) {
+  if (!f || typeof f !== 'string' || f.length > 200) return false;
+  return f.split('/').every(s => /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(s));
 }
 
 // key 也可能以完整链接的形式被用户粘贴回来
@@ -339,8 +346,7 @@ async function s3PresignPut(context, pathname, contentType, expireSeconds) {
   return `https://${host}${pathname}?${qs}&X-Amz-Signature=${sig}`;
 }
 
-async function s3ListObjects(context, limit) {
-  const bucket = envVar(context, 'IDRIVE_BUCKET');
+async function s3ListObjects(context, limit, prefix, delimiter) {
   const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
   const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
   const host = s3Host(context);
@@ -349,12 +355,20 @@ async function s3ListObjects(context, limit) {
   const datetime = s3Ymdhms(d);
   const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
 
-  const url = `https://${host}/?list-type=2&max-keys=${limit}`;
-  const urlObj = new URL(url);
+  const params = [
+    ['list-type', '2'],
+    ['max-keys', String(limit)]
+  ];
+  if (prefix) params.push(['prefix', prefix]);
+  if (delimiter) params.push(['delimiter', delimiter]);
+  params.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+
+  const qs = params.map(([k, v]) => `${awsUriEncode(k)}=${awsUriEncode(v)}`).join('&');
+  const url = `https://${host}/?${qs}`;
   const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
   const headers = {
-    'host': urlObj.host,
+    'host': host,
     'x-amz-content-sha256': payloadHash,
     'x-amz-date': datetime
   };
@@ -364,7 +378,7 @@ async function s3ListObjects(context, limit) {
   const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}`).join('\n') + '\n';
 
   const canonical = [
-    'GET', urlObj.pathname, urlObj.search.slice(1),
+    'GET', '/', qs,
     canonicalHeaders, signedHeaders, payloadHash
   ].join('\n');
 
@@ -385,11 +399,32 @@ async function s3ListObjects(context, limit) {
   }
 
   const xml = await res.text();
-  const keys = [];
-  const keyRe = /<Key>([^<]+)<\/Key>/g;
+  const files = [];
+  const folders = [];
+
+  const contentRe = /<Contents>([\s\S]*?)<\/Contents>/g;
   let m;
-  while ((m = keyRe.exec(xml))) keys.push(decodeURIComponent(m[1]));
-  return keys;
+  while ((m = contentRe.exec(xml))) {
+    const block = m[1];
+    const keyM = block.match(/<Key>([^<]+)<\/Key>/);
+    const sizeM = block.match(/<Size>(\d+)<\/Size>/);
+    if (keyM) {
+      const k = keyM[1];
+      if (k.endsWith('.folder')) continue;
+      files.push({ key: k, size: sizeM ? parseInt(sizeM[1], 10) : null });
+    }
+  }
+
+  if (delimiter) {
+    const prefixRe = /<CommonPrefixes>\s*<Prefix>([^<]+)<\/Prefix>\s*<\/CommonPrefixes>/g;
+    while ((m = prefixRe.exec(xml))) {
+      const p = m[1].replace(/\/$/, '');
+      const name = p.split('/').pop();
+      if (name) folders.push({ name, path: p });
+    }
+  }
+
+  return { files, folders };
 }
 
 async function s3DeleteObject(context, key) {
@@ -435,6 +470,97 @@ async function s3DeleteObject(context, key) {
   if (!res.ok && res.status !== 204) {
     const text = await res.text();
     throw new Error(`S3 delete failed ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+
+async function s3PutEmpty(context, key) {
+  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host(context);
+  const pathname = '/' + key;
+  const d = new Date();
+  const date = s3Ymd(d);
+  const datetime = s3Ymdhms(d);
+  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+
+  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+  const headers = {
+    'host': host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': datetime
+  };
+
+  const sortedKeys = Object.keys(headers).sort();
+  const signedHeaders = sortedKeys.join(';');
+  const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}`).join('\n') + '\n';
+
+  const canonical = [
+    'PUT', pathname, '',
+    canonicalHeaders, signedHeaders, payloadHash
+  ].join('\n');
+
+  const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
+  const signingKey = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const sig = s3Hex(await s3Hmac(signingKey, toSign));
+
+  const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
+
+  const res = await fetch(`https://${host}${pathname}`, {
+    method: 'PUT',
+    headers: { ...headers, Authorization: auth }
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`S3 put failed ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+
+async function s3CopyObject(context, srcKey, dstKey) {
+  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host(context);
+  const bucket = envVar(context, 'IDRIVE_BUCKET');
+  const pathname = '/' + dstKey;
+  const copySource = `/${bucket}/${srcKey}`;
+  const d = new Date();
+  const date = s3Ymd(d);
+  const datetime = s3Ymdhms(d);
+  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+
+  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+  const headers = {
+    'host': host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-copy-source': copySource,
+    'x-amz-date': datetime
+  };
+
+  const sortedKeys = Object.keys(headers).sort();
+  const signedHeaders = sortedKeys.join(';');
+  const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}`).join('\n') + '\n';
+
+  const canonical = [
+    'PUT', pathname, '',
+    canonicalHeaders, signedHeaders, payloadHash
+  ].join('\n');
+
+  const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
+  const signingKey = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const sig = s3Hex(await s3Hmac(signingKey, toSign));
+
+  const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
+
+  const res = await fetch(`https://${host}${pathname}`, {
+    method: 'PUT',
+    headers: { ...headers, Authorization: auth }
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`S3 copy failed ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -639,20 +765,42 @@ export async function onRequest(context) {
       const storage = url.searchParams.get('storage') || 'blob';
       const want = parseInt(url.searchParams.get('limit'), 10);
       const limit = Math.min(Number.isFinite(want) ? want : LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT);
+      const folderMode = url.searchParams.has('prefix');
+      const userPrefix = url.searchParams.get('prefix') || '';
 
       // ── S3 列表 ──
       if (storage === 's3') {
         if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
         try {
-          const keys = await s3ListObjects(context, limit);
-          const items = keys.map(k => {
-            const name = k.split('/').pop();
+          if (folderMode) {
+            const s3Prefix = userPrefix ? `uploads/${userPrefix}/` : 'uploads/';
+            const { files, folders } = await s3ListObjects(context, limit, s3Prefix, '/');
+            const items = files.map(f => {
+              const name = f.key.split('/').pop();
+              return {
+                key: f.key,
+                name,
+                url: publicUrl(origin, f.key),
+                type: MIME_BY_EXT[extOf(f.key)] || 'application/octet-stream',
+                size: f.size,
+                storage: 's3'
+              };
+            });
+            const userFolders = folders.map(fo => {
+              const relPath = fo.path.startsWith('uploads/') ? fo.path.slice(8) : fo.path;
+              return { name: fo.name, path: relPath };
+            });
+            return json({ ok: true, folders: userFolders, items, total: items.length, prefix: userPrefix, storage: 's3' });
+          }
+          const { files } = await s3ListObjects(context, limit, '', '');
+          const items = files.map(f => {
+            const name = f.key.split('/').pop();
             return {
-              key: k,
+              key: f.key,
               name,
-              url: publicUrl(origin, k),
-              type: MIME_BY_EXT[extOf(k)] || 'application/octet-stream',
-              etag: null,
+              url: publicUrl(origin, f.key),
+              type: MIME_BY_EXT[extOf(f.key)] || 'application/octet-stream',
+              size: f.size,
               storage: 's3'
             };
           });
@@ -663,6 +811,45 @@ export async function onRequest(context) {
       }
 
       // ── Blob 列表（默认）──
+      if (folderMode) {
+        const blobPrefix = userPrefix ? userPrefix + '/' : '';
+        const result = await control.list({ prefix: blobPrefix, limit: LIST_MAX_LIMIT, paginate: false });
+        const allKeys = (result.blobs || []).map(b => b.key).filter(k => !k.endsWith('.folder'));
+
+        const folderSet = new Set();
+        const directFiles = [];
+        for (const key of allKeys) {
+          const relative = blobPrefix ? key.slice(blobPrefix.length) : key;
+          const slashIdx = relative.indexOf('/');
+          if (slashIdx > 0) {
+            folderSet.add(relative.slice(0, slashIdx));
+          } else {
+            const blob = (result.blobs || []).find(b => b.key === key);
+            directFiles.push({
+              key,
+              name: key.split('/').pop(),
+              url: publicUrl(origin, key),
+              type: MIME_BY_EXT[extOf(key)] || 'application/octet-stream',
+              etag: blob ? blob.etag || null : null
+            });
+          }
+        }
+
+        const folders = [...folderSet].sort().map(name => ({
+          name,
+          path: blobPrefix ? blobPrefix.slice(0, -1) + '/' + name : name
+        }));
+
+        return json({
+          ok: true,
+          folders,
+          items: directFiles.slice(0, limit),
+          total: directFiles.length,
+          prefix: userPrefix,
+          storage: 'blob'
+        });
+      }
+
       const cursor = url.searchParams.get('cursor');
       const detail = url.searchParams.get('detail') === '1';
 
@@ -736,6 +923,8 @@ export async function onRequest(context) {
       const storage = url.searchParams.get('storage') || 'blob';
       const name = String(body.filename || body.name || 'file').split(/[\\/]/).pop();
       const size = Number(body.size);
+      const rawFolder = String(body.folder || '').trim();
+      if (rawFolder && !isValidFolder(rawFolder)) return fail('文件夹路径格式不正确');
 
       const contentType =
         typeof body.contentType === 'string' && /^\w+\/[\w.+-]+$/.test(body.contentType)
@@ -749,7 +938,7 @@ export async function onRequest(context) {
           return fail(`S3 文件过大，上限 ${Math.floor(S3_MAX_BYTES / 1024 / 1024 / 1024)}GB`);
         }
         const safeName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const key = `uploads/${buildKey(safeName)}`;
+        const key = `uploads/${buildKey(safeName, rawFolder)}`;
         const pathname = '/' + key;
         const uploadUrl = await s3PresignPut(context, pathname, contentType, UPLOAD_URL_TTL);
         return json({
@@ -769,7 +958,7 @@ export async function onRequest(context) {
         return fail(`Blob 文件过大，直传上限 ${Math.floor(DIRECT_MAX_BYTES / 1024 / 1024)}MB`);
       }
 
-      const key = buildKey(name);
+      const key = buildKey(name, rawFolder);
       const signed = await control.createUploadUrl(key, {
         expireSeconds: UPLOAD_URL_TTL,
         contentType
@@ -858,6 +1047,72 @@ export async function onRequest(context) {
         contentType,
         name: key.split('/').pop()
       });
+    }
+
+    // ── POST /api/mkdir ────────────────────────────────────────────
+    if (request.method === 'POST' && route === 'mkdir') {
+      const gate = permGate(await resolveAuth(context, request, url), 'upload');
+      if (gate) return gate;
+      let body;
+      try { body = await request.json(); } catch { return fail('需要 JSON 请求体'); }
+      const folder = String(body.folder || '').trim();
+      if (!folder || !isValidFolder(folder)) return fail('文件夹路径格式不正确');
+      const storage = url.searchParams.get('storage') || 'blob';
+
+      if (storage === 's3') {
+        if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
+        try {
+          await s3PutEmpty(context, `uploads/${folder}/.folder`);
+          return json({ ok: true, folder, storage: 's3' });
+        } catch (e) {
+          return fail('创建文件夹失败：' + e.message, 500);
+        }
+      }
+
+      try {
+        await control.set(`${folder}/.folder`, new ArrayBuffer(0));
+        return json({ ok: true, folder, storage: 'blob' });
+      } catch (e) {
+        return fail('创建文件夹失败：' + e.message, 500);
+      }
+    }
+
+    // ── POST /api/rename ───────────────────────────────────────────
+    if (request.method === 'POST' && route === 'rename') {
+      const auth = await resolveAuth(context, request, url);
+      const gate1 = permGate(auth, 'upload');
+      if (gate1) return gate1;
+      const gate2 = permGate(auth, 'delete');
+      if (gate2) return gate2;
+      let body;
+      try { body = await request.json(); } catch { return fail('需要 JSON 请求体'); }
+      const oldKey = keyFromAny(body.oldKey || '');
+      const newKey = keyFromAny(body.newKey || '');
+      if (!oldKey || !newKey) return fail('缺少 oldKey 或 newKey');
+      if (!isValidKey(oldKey) || !isValidKey(newKey)) return fail('key 格式不正确');
+      if (oldKey === newKey) return fail('新旧 key 相同');
+      const storage = url.searchParams.get('storage') || 'blob';
+
+      if (storage === 's3') {
+        if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
+        try {
+          await s3CopyObject(context, oldKey, newKey);
+          await s3DeleteObject(context, oldKey);
+          return json({ ok: true, oldKey, newKey, storage: 's3' });
+        } catch (e) {
+          return fail('重命名失败：' + e.message, 500);
+        }
+      }
+
+      try {
+        const data = await control.get(oldKey, { type: 'arrayBuffer' });
+        if (!data) return fail('文件不存在', 404);
+        await control.set(newKey, data);
+        await control.delete(oldKey);
+        return json({ ok: true, oldKey, newKey, storage: 'blob' });
+      } catch (e) {
+        return fail('重命名失败：' + e.message, 500);
+      }
     }
 
     // ── DELETE /api/delete ─────────────────────────────────────────

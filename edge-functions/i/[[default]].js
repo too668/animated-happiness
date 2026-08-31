@@ -18,8 +18,8 @@ const IMAGE_TYPES = {
 
 const store = getStore(STORE_NAME);
 
-const BLOB_KEY_RE = /^\d{4}\/\d{2}\/[0-9a-f]{12}(-[a-z0-9.-]{1,48})?\.[a-z0-9]{1,8}$/;
-const S3_KEY_RE = /^uploads\/\d{4}\/\d{2}\/[0-9a-f]{12}(-[a-z0-9._-]{1,64})?\.[a-z0-9]{1,8}$/;
+const BLOB_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*[a-zA-Z0-9]\.[a-zA-Z0-9]{1,8}$/;
+const S3_KEY_RE = /^uploads\/[a-zA-Z0-9][a-zA-Z0-9._/-]*[a-zA-Z0-9]\.[a-zA-Z0-9]{1,8}$/;
 
 const notFound = () =>
   new Response('Not Found', {
@@ -116,6 +116,7 @@ export async function onRequest(context) {
 
   if (isS3 && !S3_KEY_RE.test(key)) return notFound();
   if (isBlob && !BLOB_KEY_RE.test(key)) return notFound();
+  if (key.includes('..') || key.endsWith('.folder')) return notFound();
 
   const ext = key.slice(key.lastIndexOf('.')).toLowerCase();
   const knownType = IMAGE_TYPES[ext];
