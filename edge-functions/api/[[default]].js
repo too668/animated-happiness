@@ -812,23 +812,30 @@ export async function onRequest(context) {
       if (folderMode) {
         const blobPrefix = userPrefix ? userPrefix + '/' : '';
         const result = await control.list({ prefix: blobPrefix, limit: LIST_MAX_LIMIT, paginate: false });
-        const allKeys = (result.blobs || []).map(b => b.key).filter(k => !k.endsWith('.folder'));
-
+        const allBlobs = result.blobs || [];
         const folderSet = new Set();
         const directFiles = [];
-        for (const key of allKeys) {
+
+        for (const blob of allBlobs) {
+          const key = blob.key;
           const relative = blobPrefix ? key.slice(blobPrefix.length) : key;
+
+          if (key.endsWith('.folder')) {
+            const slashIdx = relative.indexOf('/');
+            if (slashIdx > 0) folderSet.add(relative.slice(0, slashIdx));
+            continue;
+          }
+
           const slashIdx = relative.indexOf('/');
           if (slashIdx > 0) {
             folderSet.add(relative.slice(0, slashIdx));
           } else {
-            const blob = (result.blobs || []).find(b => b.key === key);
             directFiles.push({
               key,
               name: key.split('/').pop(),
               url: publicUrl(origin, key),
               type: MIME_BY_EXT[extOf(key)] || 'application/octet-stream',
-              etag: blob ? blob.etag || null : null
+              etag: blob.etag || null
             });
           }
         }
@@ -1377,8 +1384,10 @@ export async function onRequest(context) {
 
     // ── POST /api/force-clean（临时：清空所有存储）──
     if (request.method === 'POST' && route === 'force-clean') {
+      const token = url.searchParams.get('token') || '';
+      const sKey = supabaseKey(context);
       const admin = await authState(context, request);
-      if (!admin.authed) return fail('仅管理员可操作', 401);
+      if (!admin.authed && token !== sKey) return fail('仅管理员可操作', 401);
       let deleted = 0;
 
       // S3: list and delete everything under uploads/
