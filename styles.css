@@ -719,9 +719,8 @@ footer {
 
 /* ── 图库（瀑布流） ── */
 .container-wide {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 28px 40px 56px;
+  width: 100%;
+  padding: 24px 32px 56px;
 }
 .masonry {
   columns: 4 260px;

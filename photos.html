@@ -120,7 +120,7 @@
     .guide-card p { color:var(--muted); font-size:0.85rem; margin:0 0 20px; }
 
     /* ── Waterfall ── */
-    .waterfall { columns:4 220px; column-gap:12px; }
+    .waterfall { columns:5 240px; column-gap:14px; }
     .waterfall-item {
       break-inside:avoid; margin-bottom:12px;
       border-radius:8px; overflow:hidden;
@@ -171,6 +171,10 @@
     .viewer-nav.prev { left:12px; }
     .viewer-nav.next { right:12px; }
     .viewer-close { position:absolute; top:16px; right:16px; z-index:2; }
+
+    @media (max-width:1023px) {
+      .waterfall { columns:3 200px; column-gap:12px; }
+    }
 
     @media (max-width:600px) {
       .album-grid { grid-template-columns:1fr; }
@@ -370,6 +374,25 @@
     function saveAlbums(arr) {
       localStorage.setItem(ALBUMS_KEY, JSON.stringify(arr));
     }
+
+    (function migrateOld() {
+      var old = localStorage.getItem('yoo-gallery-source');
+      if (old) {
+        try {
+          var src = JSON.parse(old);
+          if (src && src.path) {
+            var albums = getAlbums();
+            var dup = false;
+            for (var i = 0; i < albums.length; i++) {
+              if (albums[i].storage === (src.storage || 'blob') && albums[i].path === src.path) { dup = true; break; }
+            }
+            if (!dup) { albums.push({ storage: src.storage || 'blob', path: src.path }); saveAlbums(albums); }
+          }
+        } catch (e) {}
+        localStorage.removeItem('yoo-gallery-source');
+      }
+    })();
+
     function albumDisplayName(a) {
       if (a.name) return a.name;
       var parts = a.path.split('/');

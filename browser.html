@@ -14,6 +14,7 @@
           integrity="sha384-Q+SBuMPu2+Rlj/ENVdxcp5LNmVj4xEw5M3/6aY4Uf0yd4NQSO/OyjkvdzTnDCxpr"
           crossorigin="anonymous" defer></script>
   <style>
+    /* ── Toolbar ── */
     .browser-toolbar {
       display:flex; align-items:center; gap:10px; flex-wrap:wrap;
       margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--border);
@@ -29,9 +30,9 @@
     .breadcrumb a:hover { background:var(--brand-light); }
     .breadcrumb .sep { color:var(--muted); font-size:0.75rem; }
     .breadcrumb .current { color:var(--text); font-weight:600; padding:3px 6px; }
-
     .browser-actions { display:flex; gap:8px; flex-shrink:0; }
 
+    /* ── Upload zone ── */
     .upload-zone {
       border:2px dashed var(--border); border-radius:12px;
       padding:24px; text-align:center; margin-bottom:16px;
@@ -45,9 +46,26 @@
     .upload-zone p { margin:6px 0; }
     .upload-zone strong { color:var(--brand); }
 
+    /* ── Selection bar ── */
+    .sel-bar {
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      padding:10px 16px; margin-bottom:12px;
+      background:var(--brand-light); border:1px solid var(--brand);
+      border-radius:10px; font-size:0.85rem;
+    }
+    .sel-bar.hidden { display:none; }
+    .sel-bar button {
+      padding:4px 12px; border:1px solid var(--border); border-radius:6px;
+      background:var(--surface); font-size:0.8rem; cursor:pointer;
+      transition:background 0.15s, border-color 0.15s;
+    }
+    .sel-bar button:hover { border-color:var(--brand); color:var(--brand); }
+    .sel-bar .sel-danger:hover { border-color:var(--danger); color:var(--danger); }
+
+    /* ── Grid ── */
     .browser-grid {
-      display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
-      gap:16px;
+      display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));
+      gap:18px;
     }
     .grid-item {
       border:1px solid var(--border); border-radius:10px;
@@ -59,14 +77,15 @@
       border-color:var(--brand); transform:translateY(-2px);
       box-shadow:0 4px 12px rgba(0,0,0,0.06);
     }
+    .grid-item.selected { border-color:var(--brand); box-shadow:0 0 0 2px var(--brand-light); }
     .grid-item.folder { cursor:pointer; }
     .folder-thumb {
-      height:140px; display:flex; align-items:center; justify-content:center;
+      height:160px; display:flex; align-items:center; justify-content:center;
       background:var(--brand-light);
     }
     .folder-thumb i { color:var(--brand); }
     .file-thumb {
-      height:140px; overflow:hidden; display:flex; align-items:center; justify-content:center;
+      height:160px; overflow:hidden; display:flex; align-items:center; justify-content:center;
       background:var(--bg);
     }
     .file-thumb img { width:100%; height:100%; object-fit:cover; }
@@ -91,7 +110,37 @@
     .item-btn:hover { background:var(--brand-light); color:var(--brand); }
     .item-btn.danger:hover { background:rgba(245,108,108,0.1); color:var(--danger); }
 
-    /* Full-screen viewer */
+    /* ── Checkbox ── */
+    .grid-check {
+      position:absolute; top:8px; left:8px; z-index:2;
+      display:flex; align-items:center; justify-content:center;
+      width:22px; height:22px; border-radius:4px;
+      background:rgba(255,255,255,0.85); border:1px solid var(--border);
+      cursor:pointer; opacity:0; transition:opacity 0.15s;
+    }
+    .grid-item:hover .grid-check,
+    .grid-item.selected .grid-check { opacity:1; }
+    .grid-check input { width:14px; height:14px; accent-color:var(--brand); cursor:pointer; margin:0; }
+
+    /* ── Context menu ── */
+    .ctx-menu {
+      position:fixed; z-index:10000;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:10px; padding:6px 0; min-width:200px;
+      box-shadow:0 8px 32px rgba(0,0,0,0.18);
+      font-size:0.85rem;
+    }
+    .ctx-item {
+      padding:8px 16px; cursor:pointer;
+      display:flex; align-items:center; gap:10px;
+      transition:background 0.1s, color 0.1s;
+    }
+    .ctx-item:hover { background:var(--brand-light); color:var(--brand); }
+    .ctx-item.danger:hover { background:rgba(245,108,108,0.1); color:var(--danger); }
+    .ctx-sep { height:1px; background:var(--border); margin:4px 12px; }
+    .ctx-item i { flex-shrink:0; }
+
+    /* ── Viewer ── */
     .viewer {
       position:fixed; inset:0; z-index:9999;
       background:rgba(0,0,0,0.92); display:flex; flex-direction:column;
@@ -100,8 +149,7 @@
     .viewer.hidden { display:none !important; }
     .viewer-img-wrap {
       flex:1; display:flex; align-items:center; justify-content:center;
-      overflow:hidden; width:100%; position:relative;
-      touch-action:pan-y;
+      overflow:hidden; width:100%; position:relative; touch-action:pan-y;
     }
     .viewer-img-wrap img {
       max-width:95vw; max-height:80vh; object-fit:contain;
@@ -132,12 +180,21 @@
     .storage-tag.blob { background:rgba(64,158,255,0.12); color:#409EFF; }
     .storage-tag.s3 { background:rgba(167,139,250,0.12); color:#a78bfa; }
 
+    /* ── Tablet ── */
+    @media (max-width:1023px) {
+      .browser-grid { grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; }
+      .folder-thumb, .file-thumb { height:120px; }
+    }
+
+    /* ── Mobile ── */
     @media (max-width:600px) {
-      .browser-grid { grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:8px; }
-      .folder-thumb, .file-thumb { height:80px; }
+      .browser-grid { grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:8px; }
+      .folder-thumb, .file-thumb { height:100px; }
       .grid-item-bar .item-actions { opacity:1; }
+      .grid-check { opacity:1; }
       .viewer-nav { display:none; }
       .browser-toolbar { gap:6px; }
+      .ctx-menu { display:none !important; }
     }
   </style>
 </head>
@@ -153,26 +210,11 @@
         </svg>
       </a>
       <nav class="nav">
-        <a href="./index.html">
-          <i data-lucide="home" class="icon-sm"></i>
-          <span>主页</span>
-        </a>
-        <a href="./api.html">
-          <i data-lucide="book-open" class="icon-sm"></i>
-          <span>API 文档</span>
-        </a>
-        <a href="./photos.html">
-          <i data-lucide="image" class="icon-sm"></i>
-          <span>图库</span>
-        </a>
-        <a href="./gallery.html" class="active">
-          <i data-lucide="hard-drive" class="icon-sm"></i>
-          <span>磁盘管理</span>
-        </a>
-        <a href="./upload.html">
-          <i data-lucide="settings" class="icon-sm"></i>
-          <span>管理后台</span>
-        </a>
+        <a href="./index.html"><i data-lucide="home" class="icon-sm"></i><span>主页</span></a>
+        <a href="./api.html"><i data-lucide="book-open" class="icon-sm"></i><span>API 文档</span></a>
+        <a href="./photos.html"><i data-lucide="image" class="icon-sm"></i><span>图库</span></a>
+        <a href="./gallery.html" class="active"><i data-lucide="hard-drive" class="icon-sm"></i><span>磁盘管理</span></a>
+        <a href="./upload.html"><i data-lucide="settings" class="icon-sm"></i><span>管理后台</span></a>
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
           <i data-lucide="moon" class="icon-moon icon-md"></i>
           <i data-lucide="sun" class="icon-sun icon-md"></i>
@@ -193,8 +235,7 @@
         <input type="password" id="loginPassword" class="input" placeholder="输入访问密码"
                autocomplete="current-password" required style="text-align:center;" />
         <button class="button primary" type="submit" id="loginBtn" style="justify-content:center;">
-          <i data-lucide="lock" class="icon-sm"></i>
-          解锁
+          <i data-lucide="lock" class="icon-sm"></i> 解锁
         </button>
         <p id="loginError" style="display:none;color:var(--danger);font-size:0.8rem;margin:0;"></p>
       </form>
@@ -209,9 +250,6 @@
       <span id="storageTag" class="storage-tag blob">Blob</span>
       <div class="breadcrumb" id="breadcrumb"></div>
       <div class="browser-actions">
-        <button id="btnSetGallery" class="button secondary" type="button" style="padding:6px 14px;font-size:0.8rem;display:none;">
-          <i data-lucide="image-plus" class="icon-xs"></i> 加为图册
-        </button>
         <button id="btnUpload" class="button primary" type="button" style="padding:6px 14px;font-size:0.8rem;">
           <i data-lucide="upload" class="icon-xs"></i> 上传
         </button>
@@ -224,6 +262,13 @@
       </div>
     </div>
 
+    <div id="selBar" class="sel-bar hidden">
+      <span>已选 <strong id="selCount">0</strong> 项</span>
+      <button id="selDelete" class="sel-danger">批量删除</button>
+      <button id="selMove">批量移动</button>
+      <button id="selClear">取消选择</button>
+    </div>
+
     <div id="uploadZone" class="upload-zone hidden">
       <p><strong>点击或拖拽文件到此处</strong></p>
       <p style="color:var(--muted);font-size:0.8rem;">文件将上传到当前文件夹</p>
@@ -234,6 +279,8 @@
       <div class="empty" style="grid-column:1/-1;"><p>加载中...</p></div>
     </div>
   </main>
+
+  <div id="ctxMenu" class="ctx-menu" style="display:none;"></div>
 
   <div id="viewer" class="viewer hidden">
     <button class="viewer-btn viewer-close" id="viewerClose" title="关闭 (ESC)">
@@ -302,8 +349,13 @@
     var viewerName = document.getElementById('viewerName');
     var viewerIdx = document.getElementById('viewerIdx');
     var viewerWrap = document.getElementById('viewerWrap');
+    var ctxMenu = document.getElementById('ctxMenu');
+    var selBar = document.getElementById('selBar');
+    var selCount = document.getElementById('selCount');
 
     var state = { storage: 'blob', path: '', folders: [], items: [], viewIndex: -1 };
+    var selFiles = {};
+    var selFolders = {};
 
     function parseUrl() {
       var p = new URLSearchParams(location.search);
@@ -327,9 +379,6 @@
       var tag = document.getElementById('storageTag');
       tag.className = 'storage-tag ' + state.storage;
       tag.textContent = state.storage === 's3' ? 'iDrive S3' : 'Blob';
-
-      var setGalleryBtn = document.getElementById('btnSetGallery');
-      setGalleryBtn.style.display = state.path ? '' : 'none';
 
       var html = '<a href="./gallery.html">' + esc(storageLabel()) + '</a>';
       if (state.path) {
@@ -359,6 +408,7 @@
     }
 
     function load() {
+      clearSel();
       renderBreadcrumb();
       grid.innerHTML = '<div class="empty" style="grid-column:1/-1;"><p>加载中...</p></div>';
       var qs = '?storage=' + encodeURIComponent(state.storage) +
@@ -389,7 +439,12 @@
       var html = '';
 
       state.folders.forEach(function (f, i) {
-        html += '<div class="grid-item folder" data-type="folder" data-idx="' + i + '">' +
+        var checked = selFolders[i] ? ' checked' : '';
+        var selClass = selFolders[i] ? ' selected' : '';
+        html += '<div class="grid-item folder' + selClass + '" data-type="folder" data-idx="' + i + '">' +
+          '<label class="grid-check" onclick="event.stopPropagation()">' +
+            '<input type="checkbox" data-sel="folder" data-idx="' + i + '"' + checked + ' />' +
+          '</label>' +
           '<div class="folder-thumb"><i data-lucide="folder" class="icon-lg"></i></div>' +
           '<div class="grid-item-bar"><strong title="' + esc(f.name) + '">' + esc(f.name) + '</strong>' +
           '<div class="item-actions">' +
@@ -399,16 +454,19 @@
       });
 
       state.items.forEach(function (it, i) {
+        var checked = selFiles[i] ? ' checked' : '';
+        var selClass = selFiles[i] ? ' selected' : '';
         var thumb = isImage(it.name)
           ? '<div class="file-thumb"><img src="' + esc(it.url) + '" alt="' + esc(it.name) + '" loading="lazy" /></div>'
           : '<div class="file-thumb"><i data-lucide="file" class="icon-lg file-icon"></i></div>';
-        html += '<div class="grid-item file" data-type="file" data-idx="' + i + '">' +
+        html += '<div class="grid-item file' + selClass + '" data-type="file" data-idx="' + i + '">' +
+          '<label class="grid-check" onclick="event.stopPropagation()">' +
+            '<input type="checkbox" data-sel="file" data-idx="' + i + '"' + checked + ' />' +
+          '</label>' +
           thumb +
           '<div class="grid-item-bar"><strong title="' + esc(it.name) + '">' + esc(it.name) + '</strong>' +
           '<div class="item-actions">' +
             '<button class="item-btn" data-a="copy" data-idx="' + i + '" title="复制链接"><i data-lucide="link" class="icon-xs"></i></button>' +
-            '<button class="item-btn" data-a="duplicate" data-idx="' + i + '" title="复制副本"><i data-lucide="copy" class="icon-xs"></i></button>' +
-            '<button class="item-btn" data-a="move" data-idx="' + i + '" title="移动到..."><i data-lucide="corner-down-right" class="icon-xs"></i></button>' +
             '<button class="item-btn" data-a="rename" data-idx="' + i + '" title="重命名"><i data-lucide="pencil" class="icon-xs"></i></button>' +
             '<button class="item-btn danger" data-a="delete" data-idx="' + i + '" title="删除"><i data-lucide="trash-2" class="icon-xs"></i></button>' +
           '</div></div></div>';
@@ -416,22 +474,236 @@
 
       grid.innerHTML = html;
       if (window.lucide) window.lucide.createIcons();
+      renderSelBar();
     }
+
+    // ── Selection ──
+    function clearSel() {
+      selFiles = {};
+      selFolders = {};
+      renderSelBar();
+    }
+    function selTotal() {
+      return Object.keys(selFiles).length + Object.keys(selFolders).length;
+    }
+    function renderSelBar() {
+      var n = selTotal();
+      selCount.textContent = n;
+      if (n > 0) selBar.classList.remove('hidden');
+      else selBar.classList.add('hidden');
+    }
+
+    grid.addEventListener('change', function (e) {
+      var cb = e.target;
+      if (!cb.matches('[data-sel]')) return;
+      var type = cb.dataset.sel;
+      var idx = cb.dataset.idx;
+      if (type === 'file') {
+        if (cb.checked) selFiles[idx] = true; else delete selFiles[idx];
+      } else {
+        if (cb.checked) selFolders[idx] = true; else delete selFolders[idx];
+      }
+      var item = cb.closest('.grid-item');
+      if (item) item.classList.toggle('selected', cb.checked);
+      renderSelBar();
+    });
+
+    document.getElementById('selClear').addEventListener('click', function () {
+      clearSel();
+      render();
+    });
+    document.getElementById('selDelete').addEventListener('click', function () {
+      var n = selTotal();
+      if (!n) return;
+      if (!confirm('确认删除选中的 ' + n + ' 项？')) return;
+      var promises = [];
+      Object.keys(selFiles).forEach(function (idx) {
+        var item = state.items[idx];
+        if (item) promises.push(
+          fetch(location.origin + '/api/delete?key=' + encodeURIComponent(item.key) + '&storage=' + state.storage, { method: 'DELETE' })
+        );
+      });
+      Object.keys(selFolders).forEach(function (idx) {
+        var folder = state.folders[idx];
+        if (folder) promises.push(
+          fetch(location.origin + '/api/delete-folder?storage=' + state.storage, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder: folder.path })
+          })
+        );
+      });
+      Promise.all(promises).then(function () {
+        showToast('批量删除完成', 'success');
+        clearSel();
+        load();
+      }).catch(function (e) { showToast('部分删除失败', 'error'); load(); });
+    });
+    document.getElementById('selMove').addEventListener('click', function () {
+      var n = selTotal();
+      if (!n) return;
+      var hint = state.path || '(根目录)';
+      var target = prompt('输入目标文件夹路径（当前：' + hint + '）：', state.path);
+      if (target === null) return;
+      target = target.trim();
+      var promises = [];
+      Object.keys(selFiles).forEach(function (idx) {
+        var item = state.items[idx];
+        if (!item) return;
+        var newKey = target ? target + '/' + item.name : item.name;
+        promises.push(fetch(location.origin + '/api/rename?storage=' + state.storage, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ oldKey: item.key, newKey: newKey })
+        }));
+      });
+      Promise.all(promises).then(function () {
+        showToast('批量移动完成', 'success');
+        clearSel();
+        load();
+      }).catch(function (e) { showToast('部分移动失败', 'error'); load(); });
+    });
+
+    // ── Context menu ──
+    function showCtx(x, y, items) {
+      var html = '';
+      items.forEach(function (it) {
+        if (it.sep) { html += '<div class="ctx-sep"></div>'; return; }
+        var cls = 'ctx-item' + (it.danger ? ' danger' : '');
+        html += '<div class="' + cls + '" data-action="' + esc(it.action) + '">' +
+          '<i data-lucide="' + esc(it.icon) + '" class="icon-xs"></i>' +
+          '<span>' + esc(it.label) + '</span></div>';
+      });
+      ctxMenu.innerHTML = html;
+      ctxMenu.style.display = 'block';
+      if (window.lucide) window.lucide.createIcons();
+
+      var rect = ctxMenu.getBoundingClientRect();
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var left = x, top = y;
+      if (x + rect.width > vw - 8) left = vw - rect.width - 8;
+      if (y + rect.height > vh - 8) top = vh - rect.height - 8;
+      if (left < 8) left = 8;
+      if (top < 8) top = 8;
+      ctxMenu.style.left = left + 'px';
+      ctxMenu.style.top = top + 'px';
+    }
+    function hideCtx() { ctxMenu.style.display = 'none'; }
+
+    document.addEventListener('click', hideCtx);
+    document.addEventListener('scroll', hideCtx, true);
+    window.addEventListener('resize', hideCtx);
+
+    function fileMenuItems(idx) {
+      var item = state.items[idx];
+      if (!item) return [];
+      return [
+        { label: '打开', icon: isImage(item.name) ? 'eye' : 'external-link', action: 'open-file' },
+        { label: '复制链接', icon: 'link', action: 'copy-link' },
+        { sep: true },
+        { label: '复制副本', icon: 'copy', action: 'duplicate' },
+        { label: '移动到…', icon: 'corner-down-right', action: 'move' },
+        { label: '重命名', icon: 'pencil', action: 'rename' },
+        { sep: true },
+        { label: '删除', icon: 'trash-2', action: 'delete', danger: true }
+      ];
+    }
+    function folderMenuItems(idx) {
+      var folder = state.folders[idx];
+      if (!folder) return [];
+      return [
+        { label: '打开', icon: 'folder-open', action: 'open-folder' },
+        { label: '加为图册', icon: 'image-plus', action: 'add-album' },
+        { sep: true },
+        { label: '重命名', icon: 'pencil', action: 'rename-folder' },
+        { label: '复制路径', icon: 'copy', action: 'copy-path' },
+        { sep: true },
+        { label: '删除文件夹', icon: 'trash-2', action: 'delete-folder', danger: true }
+      ];
+    }
+    function bgMenuItems() {
+      var items = [
+        { label: '上传文件', icon: 'upload', action: 'upload' },
+        { label: '新建文件夹', icon: 'folder-plus', action: 'mkdir' },
+        { sep: true },
+        { label: '刷新', icon: 'refresh-cw', action: 'refresh' }
+      ];
+      if (state.path) {
+        items.push({ sep: true });
+        items.push({ label: '加为图册', icon: 'image-plus', action: 'add-album-bg' });
+      }
+      return items;
+    }
+
+    function execAction(action, idx) {
+      hideCtx();
+      switch (action) {
+        case 'open-file':
+          var it = state.items[idx];
+          if (it && isImage(it.name)) openViewer(idx);
+          else if (it) copyLink(it);
+          break;
+        case 'copy-link': copyLink(state.items[idx]); break;
+        case 'duplicate': duplicateFile(idx); break;
+        case 'move': moveFile(idx); break;
+        case 'rename': renameFile(idx); break;
+        case 'delete': deleteFile(idx); break;
+        case 'open-folder':
+          var f = state.folders[idx];
+          if (f) { state.path = f.path; updateUrl(true); load(); }
+          break;
+        case 'add-album': addAlbum(state.folders[idx]); break;
+        case 'rename-folder': renameFolder(idx); break;
+        case 'copy-path':
+          var fo = state.folders[idx];
+          if (fo && navigator.clipboard) navigator.clipboard.writeText(fo.path).then(function () { showToast('路径已复制', 'success'); });
+          break;
+        case 'delete-folder': deleteFolder(idx); break;
+        case 'upload': uploadZone.classList.toggle('hidden'); break;
+        case 'mkdir': doMkdir(); break;
+        case 'refresh': load(); break;
+        case 'add-album-bg': addAlbumBg(); break;
+      }
+    }
+
+    ctxMenu.addEventListener('click', function (e) {
+      var el = e.target.closest('.ctx-item');
+      if (!el) return;
+      e.stopPropagation();
+      execAction(el.dataset.action, ctxTargetIdx);
+    });
+
+    var ctxTargetIdx = -1;
+
+    grid.addEventListener('contextmenu', function (e) {
+      if (window.innerWidth < 600) return;
+      var fileEl = e.target.closest('.grid-item.file');
+      if (fileEl) {
+        e.preventDefault();
+        ctxTargetIdx = parseInt(fileEl.dataset.idx, 10);
+        showCtx(e.clientX, e.clientY, fileMenuItems(ctxTargetIdx));
+        return;
+      }
+      var folderEl = e.target.closest('.grid-item.folder');
+      if (folderEl) {
+        e.preventDefault();
+        ctxTargetIdx = parseInt(folderEl.dataset.idx, 10);
+        showCtx(e.clientX, e.clientY, folderMenuItems(ctxTargetIdx));
+        return;
+      }
+      e.preventDefault();
+      ctxTargetIdx = -1;
+      showCtx(e.clientX, e.clientY, bgMenuItems());
+    });
 
     // ── Grid click handler ──
     grid.addEventListener('click', function (e) {
+      if (e.target.closest('.grid-check')) return;
       var btn = e.target.closest('.item-btn');
       if (btn) {
         e.stopPropagation();
         var action = btn.dataset.a;
         var idx = parseInt(btn.dataset.idx, 10);
-        if (action === 'copy') copyLink(state.items[idx]);
-        else if (action === 'duplicate') duplicateFile(idx);
-        else if (action === 'move') moveFile(idx);
-        else if (action === 'rename') renameFile(idx);
-        else if (action === 'delete') deleteFile(idx);
-        else if (action === 'rename-folder') renameFolder(idx);
-        else if (action === 'delete-folder') deleteFolder(idx);
+        ctxTargetIdx = idx;
+        execAction(action, idx);
         return;
       }
 
@@ -439,11 +711,7 @@
       if (folderEl) {
         var fi = parseInt(folderEl.dataset.idx, 10);
         var folder = state.folders[fi];
-        if (folder) {
-          state.path = folder.path;
-          updateUrl(true);
-          load();
-        }
+        if (folder) { state.path = folder.path; updateUrl(true); load(); }
         return;
       }
 
@@ -458,9 +726,7 @@
     // ── File operations ──
     function copyLink(item) {
       if (item && navigator.clipboard) {
-        navigator.clipboard.writeText(item.url).then(function () {
-          showToast('链接已复制', 'success');
-        });
+        navigator.clipboard.writeText(item.url).then(function () { showToast('链接已复制', 'success'); });
       }
     }
 
@@ -482,14 +748,12 @@
       if (!item) return;
       var newName = prompt('输入新文件名：', item.name);
       if (!newName || newName === item.name) return;
-      var oldKey = item.key;
-      var pathParts = oldKey.split('/');
+      var pathParts = item.key.split('/');
       pathParts[pathParts.length - 1] = newName;
       var newKey = pathParts.join('/');
       fetch(location.origin + '/api/rename?storage=' + state.storage, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oldKey: oldKey, newKey: newKey })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldKey: item.key, newKey: newKey })
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -510,8 +774,7 @@
       pathParts[pathParts.length - 1] = newName;
       var dstKey = pathParts.join('/');
       fetch(location.origin + '/api/copy?storage=' + state.storage, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ srcKey: item.key, dstKey: dstKey })
       })
         .then(function (r) { return r.json(); })
@@ -532,8 +795,7 @@
       var newKey = target ? target + '/' + item.name : item.name;
       if (newKey === item.key) { showToast('目标位置相同', 'info'); return; }
       fetch(location.origin + '/api/rename?storage=' + state.storage, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oldKey: item.key, newKey: newKey })
       })
         .then(function (r) { return r.json(); })
@@ -553,8 +815,7 @@
       oldParts[oldParts.length - 1] = newName;
       var newPath = oldParts.join('/');
       fetch(location.origin + '/api/rename-folder?storage=' + state.storage, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oldPath: folder.path, newPath: newPath })
       })
         .then(function (r) { return r.json(); })
@@ -570,8 +831,7 @@
       if (!folder) return;
       if (!confirm('确认删除文件夹 "' + folder.name + '"？\n文件夹内的所有文件都将被删除。')) return;
       fetch(location.origin + '/api/delete-folder?storage=' + state.storage, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folder: folder.path })
       })
         .then(function (r) { return r.json(); })
@@ -582,21 +842,47 @@
         .catch(function (e) { showToast('删除失败：' + e.message, 'error'); });
     }
 
+    function addAlbum(folder) {
+      if (!folder) return;
+      var ALBUMS_KEY = 'yoo-gallery-albums';
+      var albums = [];
+      try { albums = JSON.parse(localStorage.getItem(ALBUMS_KEY)) || []; } catch (e) { albums = []; }
+      for (var i = 0; i < albums.length; i++) {
+        if (albums[i].storage === state.storage && albums[i].path === folder.path) {
+          showToast('该图册已存在', 'info'); return;
+        }
+      }
+      albums.push({ storage: state.storage, path: folder.path });
+      localStorage.setItem(ALBUMS_KEY, JSON.stringify(albums));
+      showToast('已添加图册：' + folder.name, 'success');
+    }
+
+    function addAlbumBg() {
+      if (!state.path) return;
+      var ALBUMS_KEY = 'yoo-gallery-albums';
+      var albums = [];
+      try { albums = JSON.parse(localStorage.getItem(ALBUMS_KEY)) || []; } catch (e) { albums = []; }
+      for (var i = 0; i < albums.length; i++) {
+        if (albums[i].storage === state.storage && albums[i].path === state.path) {
+          showToast('该图册已存在', 'info'); return;
+        }
+      }
+      albums.push({ storage: state.storage, path: state.path });
+      localStorage.setItem(ALBUMS_KEY, JSON.stringify(albums));
+      showToast('已添加图册：' + state.path, 'success');
+    }
+
     // ── Upload ──
-    var btnUpload = document.getElementById('btnUpload');
-    btnUpload.addEventListener('click', function () {
+    document.getElementById('btnUpload').addEventListener('click', function () {
       uploadZone.classList.toggle('hidden');
     });
-
     uploadZone.addEventListener('click', function () { fileInput.click(); });
     uploadZone.addEventListener('dragover', function (e) { e.preventDefault(); uploadZone.classList.add('drag-over'); });
     uploadZone.addEventListener('dragleave', function () { uploadZone.classList.remove('drag-over'); });
     uploadZone.addEventListener('drop', function (e) {
-      e.preventDefault();
-      uploadZone.classList.remove('drag-over');
+      e.preventDefault(); uploadZone.classList.remove('drag-over');
       if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
     });
-
     fileInput.addEventListener('change', function () {
       if (fileInput.files.length) uploadFiles(fileInput.files);
       fileInput.value = '';
@@ -605,25 +891,17 @@
     function uploadFiles(files) {
       var ok = 0, failed = [];
       var chain = Promise.resolve();
-      Array.prototype.forEach.call(files, function (file, i) {
+      Array.prototype.forEach.call(files, function (file) {
         chain = chain.then(function () {
           return fetch(location.origin + '/api/upload-url?storage=' + state.storage, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              filename: file.name,
-              size: file.size,
-              contentType: file.type || 'application/octet-stream',
-              folder: state.path
-            })
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: file.name, size: file.size, contentType: file.type || 'application/octet-stream', folder: state.path })
           })
           .then(function (r) { return r.json(); })
           .then(function (signed) {
             if (!signed || !signed.ok) throw new Error((signed && signed.error) || '签发上传地址失败');
             return fetch(signed.uploadUrl, {
-              method: 'PUT',
-              headers: { 'Content-Type': signed.contentType },
-              body: file
+              method: 'PUT', headers: { 'Content-Type': signed.contentType }, body: file
             }).then(function (r) {
               if (!r.ok && r.status !== 200 && r.status !== 204) throw new Error('上传失败 HTTP ' + r.status);
               ok++;
@@ -640,14 +918,13 @@
     }
 
     // ── Mkdir ──
-    document.getElementById('btnMkdir').addEventListener('click', function () {
+    function doMkdir() {
       var name = prompt('输入文件夹名称：');
       if (!name || !name.trim()) return;
       name = name.trim();
       var fullPath = state.path ? state.path + '/' + name : name;
       fetch(location.origin + '/api/mkdir?storage=' + state.storage, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folder: fullPath })
       })
         .then(function (r) { return r.json(); })
@@ -656,24 +933,8 @@
           else showToast((d && d.error) || '创建失败', 'error');
         })
         .catch(function (e) { showToast('创建失败：' + e.message, 'error'); });
-    });
-
-    // ── Add as album ──
-    document.getElementById('btnSetGallery').addEventListener('click', function () {
-      if (!state.path) return;
-      var ALBUMS_KEY = 'yoo-gallery-albums';
-      var albums = [];
-      try { albums = JSON.parse(localStorage.getItem(ALBUMS_KEY)) || []; } catch (e) { albums = []; }
-      for (var i = 0; i < albums.length; i++) {
-        if (albums[i].storage === state.storage && albums[i].path === state.path) {
-          showToast('该图册已存在', 'info');
-          return;
-        }
-      }
-      albums.push({ storage: state.storage, path: state.path });
-      localStorage.setItem(ALBUMS_KEY, JSON.stringify(albums));
-      showToast('已添加图册：' + state.path, 'success');
-    });
+    }
+    document.getElementById('btnMkdir').addEventListener('click', doMkdir);
 
     // ── Refresh ──
     document.getElementById('btnRefresh').addEventListener('click', load);
@@ -685,13 +946,11 @@
       viewer.classList.remove('hidden');
       document.body.style.overflow = 'hidden';
     }
-
     function closeViewer() {
       viewer.classList.add('hidden');
       document.body.style.overflow = '';
       state.viewIndex = -1;
     }
-
     function updateViewer() {
       var item = state.items[state.viewIndex];
       if (!item) return;
@@ -700,7 +959,6 @@
       viewerName.textContent = item.name;
       viewerIdx.textContent = (state.viewIndex + 1) + ' / ' + state.items.length;
     }
-
     function navPrev() { if (state.viewIndex > 0) { state.viewIndex--; updateViewer(); } }
     function navNext() { if (state.viewIndex < state.items.length - 1) { state.viewIndex++; updateViewer(); } }
 
@@ -723,8 +981,7 @@
 
     var touchStartY = 0, touchStartX = 0;
     viewerWrap.addEventListener('touchstart', function (e) {
-      touchStartY = e.touches[0].clientY;
-      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY; touchStartX = e.touches[0].clientX;
     }, { passive: true });
     viewerWrap.addEventListener('touchend', function (e) {
       var dy = e.changedTouches[0].clientY - touchStartY;
@@ -735,19 +992,16 @@
         if (dx > 0) navPrev(); else navNext();
       }
     }, { passive: true });
-
     viewer.addEventListener('click', function (e) {
       if (e.target === viewer || e.target === viewerWrap) closeViewer();
     });
 
-    // ── Popstate (browser back/forward) ──
+    // ── Popstate ──
     window.addEventListener('popstate', function (e) {
       if (e.state) {
         state.storage = e.state.storage || 'blob';
         state.path = e.state.path || '';
-      } else {
-        parseUrl();
-      }
+      } else { parseUrl(); }
       load();
     });
 
