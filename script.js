@@ -205,10 +205,22 @@ function uploadFiles(files) {
   var ok = 0, failed = [];
   var chain = Promise.resolve();
 
+  var mode = currentMode();
+  function runUpload(file) {
+    if (mode === 'relay') {
+      return uploadRelay(file).catch(function (e) {
+        // 非图片 / GIF / SVG / BMP 中转不支持，自动退回原图直传
+        if (/只收图片|GIF|SVG|BMP/.test(e.message)) return uploadDirect(file);
+        throw e;
+      });
+    }
+    return uploadDirect(file);
+  }
+
   Array.prototype.forEach.call(files, function (file, i) {
     chain = chain.then(function () {
       if (zoneText) zoneText.textContent = '上传中 ' + (i + 1) + '/' + files.length + '：' + file.name;
-      return uploadDirect(file).then(function (item) {
+      return runUpload(file).then(function (item) {
         list.unshift({ key: item.key, url: item.url, name: item.name, size: item.size, uploadedAt: Date.now() });
         ok++;
       }).catch(function (e) {
@@ -424,18 +436,46 @@ function attachEvents() {
   var modeHint = document.getElementById('modeHint');
   var dropHint = document.getElementById('dropHint');
 
-  function applyStorage() {
-    var s = storageSelect ? storageSelect.value : 'blob';
-    if (modeHint) {
-      modeHint.innerHTML = s === 's3'
-        ? '<strong>iDrive e2 S3</strong>：直传到 S3 桶，最大 5GB，任意格式。'
-        : '<strong>腾讯云 Blob</strong>：直传到 Blob 存储，最大 20MB，任意格式。';
-    }
-    if (dropHint) dropHint.textContent = '任意格式 · 可多选';
-    syncFromServer();
-  }
+function currentStorage() {
+  return document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+}
+function currentMode() {
+  return document.getElementById('uploadMode') ? document.getElementById('uploadMode').value : 'direct';
+}
 
-  if (storageSelect) storageSelect.addEventListener('change', applyStorage);
+// 压缩中转只走 Blob（后端 /api/upload 写死 Blob）；S3 下禁掉该选项并强制直传
+function syncStorageMode() {
+  var relayOpt = document.querySelector('#uploadMode option[value="relay"]');
+  if (relayOpt) relayOpt.disabled = currentStorage() === 's3';
+  var modeEl = document.getElementById('uploadMode');
+  if (modeEl && modeEl.value === 'relay' && currentStorage() === 's3') {
+    modeEl.value = 'direct';
+  }
+  refreshUploadHint();
+}
+
+function refreshUploadHint() {
+  if (!modeHint) return;
+  var s = currentStorage();
+  var m = currentMode();
+  var storageTxt = s === 's3'
+    ? '<strong>iDrive e2 S3</strong>：直传到 S3 桶，最大 5GB，任意格式。'
+    : '<strong>腾讯云 Blob</strong>：直传到 Blob 存储，最大 20MB，任意格式。';
+  var modeTxt = m === 'relay'
+    ? ' <span style="color:var(--warning)">压缩中转：</span>字节经过函数代理，仅收图片，超过 950KB 前端自动压（GIF / SVG 超限请改用直传）。'
+    : ' <span style="color:var(--brand)">原图直传：</span>字节不经函数，保留原图，任意格式。';
+  modeHint.innerHTML = storageTxt + modeTxt;
+}
+
+function applyStorage() {
+  syncStorageMode();
+  if (dropHint) dropHint.textContent = '任意格式 · 可多选';
+  syncFromServer();
+}
+
+if (storageSelect) storageSelect.addEventListener('change', applyStorage);
+var uploadModeEl = document.getElementById('uploadMode');
+if (uploadModeEl) uploadModeEl.addEventListener('change', refreshUploadHint);
 
   document.addEventListener('change', function (e) {
     if (e.target && e.target.id === 'uploadInput') {
@@ -482,6 +522,8 @@ function attachEvents() {
       }
     });
   }
+
+  syncStorageMode();
 }
 
 // ── TABS ──

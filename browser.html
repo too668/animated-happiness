@@ -326,7 +326,7 @@
       <button id="selClear">取消选择</button>
     </div>
 
-    <div id="uploadZone" class="upload-zone hidden">
+    <div id="uploadZone" class="upload-zone">
       <p><strong>点击或拖拽文件到此处</strong></p>
       <p style="color:var(--muted);font-size:0.8rem;">文件将上传到当前文件夹</p>
       <input type="file" id="fileInput" multiple style="display:none" />
@@ -1014,7 +1014,7 @@
       chain.then(function () {
         if (ok) showToast('成功上传 ' + ok + ' 个文件', 'success');
         if (failed.length) showToast(failed.length + ' 个文件上传失败', 'error');
-        if (ok) { uploadZone.classList.add('hidden'); load(); }
+        if (ok) load();
       });
     }
 

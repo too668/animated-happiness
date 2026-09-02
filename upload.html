@@ -327,6 +327,11 @@
             <option value="blob" selected>腾讯云 Blob</option>
             <option value="s3">iDrive e2 S3</option>
           </select>
+          <label for="uploadMode" style="font-size:0.75rem;color:var(--muted);white-space:nowrap;margin-left:6px;">模式：</label>
+          <select id="uploadMode" class="storage-select">
+            <option value="direct" selected>原图直传</option>
+            <option value="relay">压缩中转</option>
+          </select>
         </div>
       </div>
 
@@ -378,7 +383,7 @@
         <span class="badge info"><span>脚本 / 外部接入</span></span>
       </div>
       <p class="muted" style="font-size:0.85rem;margin-bottom:14px;line-height:1.7;">
-        给脚本或外部程序签发带权限的密钥（上传 / 列表 / 删除）。密钥明文只在创建时显示一次；服务端只保存它的哈希——哈希存在独立的 Redis 里（与图片桶隔离），改动立即生效。
+        给脚本或外部程序签发带权限的密钥（上传 / 列表 / 删除）。密钥明文只在创建时显示一次；服务端只保存它的哈希——哈希存在 Supabase 数据库里（与图片桶隔离），改动立即生效。
       </p>
 
       <div id="keySecretBox" style="display:none;border:1px solid var(--warning);background:var(--warning-light);border-radius:8px;padding:12px 14px;margin-bottom:14px;">

@@ -9,16 +9,16 @@
 所有请求需要携带 API Key，两种方式任选：
 
 ```
-Authorization: Bearer yoo_18e4d54bdc6a7acbc4474268
+Authorization: Bearer yoo_xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 或查询参数：
 
 ```
-?key=yoo_18e4d54bdc6a7acbc4474268
+?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-> API Key 在管理后台 → API 文档页面创建，需具备 `upload` 权限。
+> API Key 在管理后台 → API Keys 卡片创建，需勾选 `upload` 权限。
 
 ---
 
@@ -29,7 +29,7 @@ Authorization: Bearer yoo_18e4d54bdc6a7acbc4474268
 ```
 POST https://yooy.cc.cd/api/upload-url?storage=s3
 Content-Type: application/json
-Authorization: Bearer yoo_18e4d54bdc6a7acbc4474268
+Authorization: Bearer yoo_xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 **请求体：**
@@ -106,7 +106,7 @@ curl -X PUT \
 # 1. 获取签名 URL
 UPLOAD_URL=$(curl -s -X POST "https://yooy.cc.cd/api/upload-url?storage=s3" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer yoo_18e4d54bdc6a7acbc4474268" \
+  -H "Authorization: Bearer yoo_xxxxxxxxxxxxxxxxxxxxxxxx" \
   -d '{"filename":"archive.zip","size":52428800,"contentType":"application/zip"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['uploadUrl'])")
 
@@ -126,7 +126,7 @@ async function uploadToS3(file, folder) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer yoo_18e4d54bdc6a7acbc4474268'
+      'Authorization': 'Bearer yoo_xxxxxxxxxxxxxxxxxxxxxxxx'
     },
     body: JSON.stringify({
       filename: file.name,
@@ -154,7 +154,7 @@ async function uploadToS3(file, folder) {
 ```python
 import requests
 
-API_KEY = "yoo_18e4d54bdc6a7acbc4474268"
+API_KEY = "yoo_xxxxxxxxxxxxxxxxxxxxxxxx"
 BASE = "https://yooy.cc.cd"
 
 def upload(filepath, folder=""):

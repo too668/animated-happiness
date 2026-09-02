@@ -81,7 +81,35 @@ const STORE_NAME = 'yoo-images';   // edge-functions/api/[[default]].js
 const STORE_NAME = 'yoo-images';   // edge-functions/i/[[default]].js
 ```
 
-API key 记录存 **Upstash Redis**（环境变量 `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`，EdgeOne 控制台配置），与图片桶完全隔离；记录只存 sha256 哈希，密钥明文不落库，吊销立即生效。`/api/health` 的 `keys.ok` 报告 Redis 连通性。
+API key / 文件夹 / 图册元数据存 **Supabase**（环境变量 `SUPABASE_URL` / `SUPABASE_SECRET_KEY`，EdgeOne 控制台配置），与图片桶完全隔离；API key 记录只存 sha256 哈希，密钥明文不落库，吊销立即生效。`/api/health` 的 `keys.ok` 报告 Supabase 连通性。
+
+需要三张表（Postgres / Supabase SQL 编辑器执行一次即可）：
+
+```sql
+create table api_keys (
+  id          text primary key,
+  secret_hash text unique not null,
+  name        text not null default '未命名',
+  perms       jsonb not null default '[]',
+  created_at  timestamptz not null default now()
+);
+
+create table folders (
+  storage     text not null,
+  path        text not null,
+  parent_path text not null default '',
+  primary key (storage, path)
+);
+
+create table albums (
+  id         bigint generated always as identity primary key,
+  storage    text not null,
+  path       text not null,
+  name       text,
+  created_at timestamptz not null default now(),
+  unique (storage, path)
+);
+```
 
 存储桶**不需要预先创建**，`getStore()` 首次写入时自动建（已实测：`/api/health` 对新桶名返回 `storage.ok: true`）。
 
