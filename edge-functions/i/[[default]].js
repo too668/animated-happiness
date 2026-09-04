@@ -33,6 +33,13 @@ function envVar(context, name) {
   return typeof v === 'string' && v.trim() ? v.trim() : '';
 }
 
+// 统一的 fetch 超时封装：上游（S3）挂起时避免请求无限期等待
+function fetchT(url, init, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 // ── S3 SigV4 (只读 GET) ─────────────────────────────────────
 const enc = new TextEncoder();
 
@@ -94,7 +101,7 @@ async function s3SignedGet(context, key) {
   const sk = await s3SigningKey(secret, date, IDRIVE_REGION);
   const sig = s3Hex(await s3Hmac(sk, toSign));
 
-  return fetch(url, {
+  return fetchT(url, {
     method: 'GET',
     headers: {
       ...headers,

@@ -1,33 +1,30 @@
-name: Deploy to EdgeOne Makers
+name: Check Edge Functions
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch: # 手动触发
 
 jobs:
-  deploy:
+  check:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
-        
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      
-      - name: Deploy to EdgeOne
+
+      - name: Syntax check edge functions
         run: |
-          echo "Deploying to EdgeOne Makers..."
-          echo "Note: EdgeOne will automatically pick up changes from your repository"
-          echo "If you're using custom domain or advanced features, please check the EdgeOne console"
-          
-          # Simple verification that code exists
-          ls -la edge-functions/
-          cat edgefunctions.json
-          
-          # The actual deployment is handled by EdgeOne's webhook
-          # This just verifies the build succeeds
-          echo "Build verification complete!"
+          bunx --bun node --check "edge-functions/api/[[default]].js"
+          bunx --bun node --check "edge-functions/i/[[default]].js"
+          node --check script.js
+
+      - name: Verify config
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('edgefunctions.json','utf8')); console.log('edgefunctions.json OK')"
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"

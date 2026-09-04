@@ -56,6 +56,13 @@ const json = (data, status = 200, extra) =>
 
 const fail = (error, status = 400) => json({ ok: false, error }, status);
 
+// 统一的 fetch 超时封装：上游（S3/Supabase）挂起时避免请求无限期等待
+function fetchT(url, init, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 // ── 管理后台密码门禁 ─────────────────────────────────────────
 // 密码只存在于环境变量 ADMIN_PASSWORD（EdgeOne 控制台配置），代码与前端均不持明文。
 // 登录成功下发 httpOnly Cookie（值 = sha256 派生 token），7 天有效，刷新不重填。
@@ -194,7 +201,7 @@ async function resolveAuth(context, request, url) {
     const key = supabaseKey(context);
     if (!base || !key) return { role: null, perms: [] };
     const hash = await keyHashFor(secret);
-    const res = await fetch(base + '/rest/v1/api_keys?secret_hash=eq.' + encodeURIComponent(hash) + '&select=*', {
+    const res = await fetchT(base + '/rest/v1/api_keys?secret_hash=eq.' + encodeURIComponent(hash) + '&select=*', {
       headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
     });
     const rows = await res.json();
@@ -223,7 +230,7 @@ async function findKeyRecord(context, id) {
     const base = supabaseUrl(context);
     const key = supabaseKey(context);
     if (!base || !key) return null;
-    const res = await fetch(base + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id) + '&select=*', {
+    const res = await fetchT(base + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id) + '&select=*', {
       headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
     });
     const rows = await res.json();
@@ -448,7 +455,7 @@ async function s3ListObjects(context, limit, prefix, delimiter, continuationToke
 
   const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
 
-  const res = await fetch(url, {
+  const res = await fetchT(url, {
     method: 'GET',
     headers: { ...headers, Authorization: auth }
   });
@@ -531,7 +538,7 @@ async function s3DeleteObject(context, key) {
 
   const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
 
-  const res = await fetch(url, {
+  const res = await fetchT(url, {
     method: 'DELETE',
     headers: { ...headers, Authorization: auth }
   });
@@ -578,7 +585,7 @@ async function s3CopyObject(context, srcKey, dstKey) {
 
   const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
 
-  const res = await fetch(`https://${host}${pathname}`, {
+  const res = await fetchT(`https://${host}${pathname}`, {
     method: 'PUT',
     headers: { ...headers, Authorization: auth }
   });
@@ -664,7 +671,7 @@ export async function onRequest(context) {
         const sbase = supabaseUrl(context);
         const skey = supabaseKey(context);
         if (sbase && skey) {
-          const r = await fetch(sbase + '/rest/v1/albums?limit=0', {
+          const r = await fetchT(sbase + '/rest/v1/albums?limit=0', {
             headers: { 'apikey': skey, 'Authorization': 'Bearer ' + skey }
           });
           keysProbe = { ok: r.ok, backend: 'supabase' };
@@ -707,7 +714,7 @@ export async function onRequest(context) {
       // GET —— 列表
       if (request.method === 'GET') {
         try {
-          const res = await fetch(sbase + '/rest/v1/api_keys?order=created_at.desc&select=*', {
+          const res = await fetchT(sbase + '/rest/v1/api_keys?order=created_at.desc&select=*', {
             headers: { 'apikey': skey, 'Authorization': 'Bearer ' + skey }
           });
           const rows = await res.json();
@@ -739,7 +746,7 @@ export async function onRequest(context) {
         const secret = 'yoo_' + randomHex(12);
         const secretHash = await keyHashFor(secret);
         try {
-          const res = await fetch(sbase + '/rest/v1/api_keys', {
+          const res = await fetchT(sbase + '/rest/v1/api_keys', {
             method: 'POST',
             headers: sHeaders,
             body: JSON.stringify({ id, secret_hash: secretHash, name, perms })
@@ -769,7 +776,7 @@ export async function onRequest(context) {
         }
         if (!Object.keys(update).length) return fail('没有要更新的字段');
         try {
-          const res = await fetch(sbase + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id), {
+          const res = await fetchT(sbase + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id), {
             method: 'PATCH',
             headers: sHeaders,
             body: JSON.stringify(update)
@@ -787,7 +794,7 @@ export async function onRequest(context) {
         const id = url.searchParams.get('id') || '';
         if (!id) return fail('缺少参数 id');
         try {
-          await fetch(sbase + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id), {
+          await fetchT(sbase + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id), {
             method: 'DELETE',
             headers: sHeaders
           });
@@ -1345,7 +1352,7 @@ export async function onRequest(context) {
         '&parent_path=eq.' + encodeURIComponent(parentPath) +
         '&order=path.asc';
       try {
-        const res = await fetch(base + '/rest/v1/folders?' + filter, {
+        const res = await fetchT(base + '/rest/v1/folders?' + filter, {
           headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
         });
         const rows = await res.json();
@@ -1369,7 +1376,7 @@ export async function onRequest(context) {
           parent_path: segments.slice(0, i - 1).join('/')
         });
       }
-      const res = await fetch(base + '/rest/v1/folders?on_conflict=storage,path', {
+      const res = await fetchT(base + '/rest/v1/folders?on_conflict=storage,path', {
         method: 'POST',
         headers: { ...supabaseHeaders(context), 'Prefer': 'resolution=merge-duplicates' },
         body: JSON.stringify(rows)
@@ -1388,7 +1395,7 @@ export async function onRequest(context) {
         '&or=(path.eq.' + encodeURIComponent(folderPath) +
         ',path.like.' + encodeURIComponent(folderPath + '/%') + ')';
       try {
-        const res = await fetch(base + '/rest/v1/folders?' + filter, {
+        const res = await fetchT(base + '/rest/v1/folders?' + filter, {
           method: 'DELETE',
           headers: supabaseHeaders(context)
         });
@@ -1404,7 +1411,7 @@ export async function onRequest(context) {
       try {
         const filter = 'or=(path.eq.' + encodeURIComponent(folderPath) +
           ',path.like.' + encodeURIComponent(folderPath + '/%') + ')';
-        const res = await fetch(base + '/rest/v1/albums?' + filter, {
+        const res = await fetchT(base + '/rest/v1/albums?' + filter, {
           method: 'DELETE',
           headers: supabaseHeaders(context)
         });
@@ -1420,7 +1427,7 @@ export async function onRequest(context) {
       const key = supabaseKey(context);
       if (!base || !key) return fail('相册服务未配置', 503);
       try {
-        const res = await fetch(base + '/rest/v1/albums?order=created_at.asc', {
+        const res = await fetchT(base + '/rest/v1/albums?order=created_at.asc', {
           headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
         });
         const data = await res.json();
@@ -1442,8 +1449,11 @@ export async function onRequest(context) {
       const path = (body.path || '').trim();
       const name = (body.name || '').trim() || null;
       if (!path) return fail('缺少 path');
+      // 相册 path 与文件夹规则一致：安全字符集，避免脏数据
+      if (!isValidFolder(path)) return fail('path 格式不正确（仅允许字母/数字/./_/-，且不以 / 开头结尾）');
+      if (storage !== 'blob' && storage !== 's3') return fail('storage 只能是 blob 或 s3');
       try {
-        const res = await fetch(base + '/rest/v1/albums', {
+        const res = await fetchT(base + '/rest/v1/albums', {
           method: 'POST',
           headers: supabaseHeaders(context),
           body: JSON.stringify({ storage, path, name })
@@ -1465,7 +1475,7 @@ export async function onRequest(context) {
       const id = url.searchParams.get('id');
       if (!id) return fail('缺少 id');
       try {
-        await fetch(base + '/rest/v1/albums?id=eq.' + encodeURIComponent(id), {
+        await fetchT(base + '/rest/v1/albums?id=eq.' + encodeURIComponent(id), {
           method: 'DELETE',
           headers: supabaseHeaders(context)
         });
