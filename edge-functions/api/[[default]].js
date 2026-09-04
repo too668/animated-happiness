@@ -109,6 +109,47 @@ async function authState(context, request) {
 const authCookie = (token, maxAge) =>
   `${AUTH_COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax; Secure`;
 
+// ── 登录防爆破（按 IP 计数，独立存储，避免污染图片列表）──
+const internal = getStore({ name: 'yoo-internal', consistency: 'strong' });
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 分钟窗口
+const LOGIN_MAX_FAILS = 8;
+
+function clientIp(request) {
+  const xff = request.headers.get('x-forwarded-for') || '';
+  const first = xff.split(',')[0].trim();
+  if (first) return first;
+  return request.headers.get('x-real-ip') || 'unknown';
+}
+
+async function loginRateKey(ip) {
+  const hash = await sha256Hex('login-rate:' + ip);
+  return '__rate_login__' + hash.slice(0, 32);
+}
+
+async function checkLoginRate(context, request) {
+  const key = await loginRateKey(clientIp(request));
+  let rec = { c: 0, t: 0 };
+  try {
+    const buf = await internal.get(key, { type: 'arrayBuffer' });
+    if (buf) rec = JSON.parse(new TextDecoder().decode(buf));
+  } catch { /* 读不到按无记录处理 */ }
+  const now = Date.now();
+  if (rec.t > now && rec.c >= LOGIN_MAX_FAILS) {
+    return { limited: true, retryAfter: Math.ceil((rec.t - now) / 1000), key };
+  }
+  return { limited: false, rec, key };
+}
+
+async function recordLoginFail(key, rec) {
+  const now = Date.now();
+  const c = (rec.t > now ? rec.c : 0) + 1;
+  await internal.set(key, JSON.stringify({ c, t: now + LOGIN_WINDOW_MS }));
+}
+
+async function clearLoginRate(key) {
+  try { await internal.delete(key); } catch { /* ignore */ }
+}
+
 // ── API key ─────────────────────────────────────────────────
 // 记录存 Supabase api_keys 表（secret_hash + perms + name），
 // 库里只有 secret 的 sha256 哈希，明文只在创建时返回一次。
@@ -248,7 +289,9 @@ function isValidKey(key) {
 function isValidFolder(f) {
   if (!f || typeof f !== 'string' || f.length > 200) return false;
   if (f.includes('..') || f.startsWith('/') || f.endsWith('/')) return false;
-  return f.split('/').every(s => s.length > 0 && s.length <= 64 && !/[<>:"|?*\x00-\x1f]/.test(s));
+  // 文件夹段只能是安全字符：与出图路由的 key 正则（[a-zA-Z0-9._/-]）保持一致，
+  // 否则带空格/%/中文的文件夹会生成无法出图的 key
+  return f.split('/').every(s => s.length > 0 && s.length <= 64 && /^[a-zA-Z0-9._-]+$/.test(s));
 }
 
 // key 也可能以完整链接的形式被用户粘贴回来
@@ -278,6 +321,20 @@ function awsUriEncode(str) {
   return encodeURIComponent(str).replace(/[!*'()]/g, c =>
     '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
   );
+}
+
+// S3 规范 URI：按段编码，保留路径分隔符
+function awsPathEncode(path) {
+  return String(path).split('/').map(awsUriEncode).join('/');
+}
+
+function decodeXmlEntities(s) {
+  return String(s)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 async function s3Hmac(key, data) {
@@ -333,8 +390,9 @@ async function s3PresignPut(context, pathname, contentType, expireSeconds) {
     .map(([k, v]) => `${awsUriEncode(k)}=${awsUriEncode(v)}`)
     .join('&');
 
+  const canonicalPath = awsPathEncode(pathname);
   const canonical = [
-    'PUT', pathname, qs,
+    'PUT', canonicalPath, qs,
     `content-type:${contentType}\nhost:${host}\n`,
     'content-type;host',
     'UNSIGNED-PAYLOAD'
@@ -344,10 +402,10 @@ async function s3PresignPut(context, pathname, contentType, expireSeconds) {
   const key = await s3SigningKey(secret, date, IDRIVE_REGION);
   const sig = s3Hex(await s3Hmac(key, toSign));
 
-  return `https://${host}${pathname}?${qs}&X-Amz-Signature=${sig}`;
+  return `https://${host}${canonicalPath}?${qs}&X-Amz-Signature=${sig}`;
 }
 
-async function s3ListObjects(context, limit, prefix, delimiter) {
+async function s3ListObjects(context, limit, prefix, delimiter, continuationToken) {
   const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
   const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
   const host = s3Host(context);
@@ -362,6 +420,7 @@ async function s3ListObjects(context, limit, prefix, delimiter) {
   ];
   if (prefix) params.push(['prefix', prefix]);
   if (delimiter) params.push(['delimiter', delimiter]);
+  if (continuationToken) params.push(['continuation-token', continuationToken]);
   params.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
 
   const qs = params.map(([k, v]) => `${awsUriEncode(k)}=${awsUriEncode(v)}`).join('&');
@@ -409,13 +468,32 @@ async function s3ListObjects(context, limit, prefix, delimiter) {
     const keyM = block.match(/<Key>([^<]+)<\/Key>/);
     const sizeM = block.match(/<Size>(\d+)<\/Size>/);
     if (keyM) {
-      const k = keyM[1];
+      const k = decodeXmlEntities(keyM[1]);
       if (k.endsWith('.folder')) continue;
       files.push({ key: k, size: sizeM ? parseInt(sizeM[1], 10) : null });
     }
   }
 
-  return { files };
+  const truncatedM = xml.match(/<IsTruncated>(true|false)<\/IsTruncated>/);
+  const nextTokenM = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/);
+  return {
+    files,
+    truncated: truncatedM ? truncatedM[1] === 'true' : false,
+    nextToken: nextTokenM ? decodeXmlEntities(nextTokenM[1]) : null
+  };
+}
+
+// 拉取 S3 某前缀下的全部对象（自动翻页），cap 防呆兜底
+async function s3ListAll(context, prefix, delimiter, cap = 10000) {
+  const out = [];
+  let token = null;
+  while (out.length < cap) {
+    const { files, truncated, nextToken } = await s3ListObjects(context, 1000, prefix, delimiter, token);
+    out.push(...files);
+    if (!truncated || !nextToken || !files.length) break;
+    token = nextToken;
+  }
+  return out;
 }
 
 async function s3DeleteObject(context, key) {
@@ -423,7 +501,7 @@ async function s3DeleteObject(context, key) {
   const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
   const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
   const host = s3Host(context);
-  const pathname = '/' + key;
+  const pathname = awsPathEncode('/' + key);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
@@ -469,8 +547,8 @@ async function s3CopyObject(context, srcKey, dstKey) {
   const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
   const host = s3Host(context);
   const bucket = envVar(context, 'IDRIVE_BUCKET');
-  const pathname = '/' + dstKey;
-  const copySource = `/${bucket}/${srcKey}`;
+  const pathname = awsPathEncode('/' + dstKey);
+  const copySource = awsPathEncode(`/${bucket}/${srcKey}`);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
@@ -543,6 +621,11 @@ export async function onRequest(context) {
       const password = envPassword(context);
       if (!password) return json({ ok: true, enabled: false, authed: true });
 
+      const rate = await checkLoginRate(context, request);
+      if (rate.limited) {
+        return fail(`尝试过于频繁，请 ${rate.retryAfter} 秒后再试`, 429);
+      }
+
       let body;
       try {
         body = await request.json();
@@ -551,8 +634,10 @@ export async function onRequest(context) {
       }
       const guess = String(body.password || '');
       if (!guess || !ctEqual(await tokenFor(guess), await tokenFor(password))) {
+        await recordLoginFail(rate.key, rate.rec);
         return fail('密码错误', 401);
       }
+      await clearLoginRate(rate.key);
       return json(
         { ok: true, enabled: true, authed: true },
         200,
@@ -632,7 +717,7 @@ export async function onRequest(context) {
             return {
               id: r.id,
               name: r.name || '',
-              prefix: r.name ? r.name.slice(0, 8) : 'yoo_',
+              prefix: 'yoo_',
               perms: normalizePerms(perms) || [],
               createdAt: r.created_at || null
             };
@@ -727,9 +812,10 @@ export async function onRequest(context) {
       if (storage === 's3') {
         if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
         try {
+          const cursor = url.searchParams.get('cursor') || undefined;
           if (folderMode) {
             const s3Prefix = userPrefix ? `uploads/${userPrefix}/` : 'uploads/';
-            const { files } = await s3ListObjects(context, limit, s3Prefix, '/');
+            const { files, truncated, nextToken } = await s3ListObjects(context, limit, s3Prefix, '/', cursor);
             const items = files.map(f => {
               const name = f.key.split('/').pop();
               return {
@@ -742,9 +828,17 @@ export async function onRequest(context) {
               };
             });
             const folders = await dbListFolders(context, 's3', userPrefix);
-            return json({ ok: true, folders, items, total: items.length, prefix: userPrefix, storage: 's3' });
+            return json({
+              ok: true,
+              folders,
+              items,
+              nextCursor: nextToken || null,
+              hasMore: truncated && Boolean(nextToken),
+              prefix: userPrefix,
+              storage: 's3'
+            });
           }
-          const { files } = await s3ListObjects(context, limit, '', '');
+          const { files, truncated, nextToken } = await s3ListObjects(context, limit, '', '', cursor);
           const items = files.map(f => {
             const name = f.key.split('/').pop();
             return {
@@ -756,7 +850,13 @@ export async function onRequest(context) {
               storage: 's3'
             };
           });
-          return json({ ok: true, items, total: items.length, storage: 's3' });
+          return json({
+            ok: true,
+            items,
+            nextCursor: nextToken || null,
+            hasMore: truncated && Boolean(nextToken),
+            storage: 's3'
+          });
         } catch (e) {
           return fail('S3 列表失败：' + e.message, 500);
         }
@@ -1096,14 +1196,10 @@ export async function onRequest(context) {
         if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
         try {
           const s3Prefix = `uploads/${folder}/`;
-          let hasMore = true;
-          while (hasMore) {
-            const { files } = await s3ListObjects(context, 1000, s3Prefix, '');
-            if (!files.length) { hasMore = false; break; }
-            for (const f of files) {
-              await s3DeleteObject(context, f.key);
-              deleted++;
-            }
+          const files = await s3ListAll(context, s3Prefix, '');
+          for (const f of files) {
+            await s3DeleteObject(context, f.key);
+            deleted++;
           }
           await dbDeleteFolders(context, 's3', folder);
           const albumsRemoved = await cascadeDeleteAlbums(context, folder);
@@ -1115,15 +1211,20 @@ export async function onRequest(context) {
 
       try {
         const blobPrefix = folder + '/';
-        let hasMore = true;
-        while (hasMore) {
-          const result = await control.list({ prefix: blobPrefix, limit: LIST_MAX_LIMIT, paginate: false });
-          const keys = (result.blobs || []).map(b => b.key);
-          if (!keys.length) { hasMore = false; break; }
-          for (const key of keys) {
-            await control.delete(key);
-            deleted++;
-          }
+        let blobKeys = [];
+        let cursor = null;
+        while (true) {
+          const opts = { prefix: blobPrefix, limit: LIST_MAX_LIMIT, paginate: false };
+          if (cursor) opts.cursor = cursor;
+          const result = await control.list(opts);
+          const page = (result.blobs || []).map(b => b.key);
+          blobKeys = blobKeys.concat(page);
+          if (!result.cursor || !page.length) break;
+          cursor = result.cursor;
+        }
+        for (const key of blobKeys) {
+          await control.delete(key);
+          deleted++;
         }
         await dbDeleteFolders(context, 'blob', folder);
         const albumsRemoved = await cascadeDeleteAlbums(context, folder);
@@ -1155,7 +1256,7 @@ export async function onRequest(context) {
         try {
           const oldPrefix = `uploads/${oldPath}/`;
           const newPrefix = `uploads/${newPath}/`;
-          const { files } = await s3ListObjects(context, 1000, oldPrefix, '');
+          const files = await s3ListAll(context, oldPrefix, '');
           for (const f of files) {
             const newKey = newPrefix + f.key.slice(oldPrefix.length);
             await s3CopyObject(context, f.key, newKey);
@@ -1173,8 +1274,17 @@ export async function onRequest(context) {
       try {
         const oldBlobPrefix = oldPath + '/';
         const newBlobPrefix = newPath + '/';
-        const result = await control.list({ prefix: oldBlobPrefix, limit: LIST_MAX_LIMIT * 2, paginate: false });
-        const blobs = result.blobs || [];
+        const blobs = [];
+        let cursor = null;
+        while (true) {
+          const opts = { prefix: oldBlobPrefix, limit: LIST_MAX_LIMIT, paginate: false };
+          if (cursor) opts.cursor = cursor;
+          const result = await control.list(opts);
+          const page = result.blobs || [];
+          blobs.push(...page);
+          if (!result.cursor || !page.length) break;
+          cursor = result.cursor;
+        }
         for (const blob of blobs) {
           const newKey = newBlobPrefix + blob.key.slice(oldBlobPrefix.length);
           const data = await control.get(blob.key, { type: 'arrayBuffer' });
@@ -1304,6 +1414,8 @@ export async function onRequest(context) {
     }
 
     if (route === 'albums' && request.method === 'GET') {
+      const gate = permGate(await resolveAuth(context, request, url), 'list');
+      if (gate) return gate;
       const base = supabaseUrl(context);
       const key = supabaseKey(context);
       if (!base || !key) return fail('相册服务未配置', 503);
@@ -1319,6 +1431,8 @@ export async function onRequest(context) {
     }
 
     if (route === 'albums' && request.method === 'POST') {
+      const gate = permGate(await resolveAuth(context, request, url), 'upload');
+      if (gate) return gate;
       const base = supabaseUrl(context);
       const key = supabaseKey(context);
       if (!base || !key) return fail('相册服务未配置', 503);
@@ -1343,6 +1457,8 @@ export async function onRequest(context) {
     }
 
     if (route === 'albums' && request.method === 'DELETE') {
+      const gate = permGate(await resolveAuth(context, request, url), 'delete');
+      if (gate) return gate;
       const base = supabaseUrl(context);
       const key = supabaseKey(context);
       if (!base || !key) return fail('相册服务未配置', 503);
@@ -1359,59 +1475,10 @@ export async function onRequest(context) {
       }
     }
 
-    // ── POST /api/force-clean（临时：清空所有存储）──
-    if (request.method === 'POST' && route === 'force-clean') {
-      const token = url.searchParams.get('token') || '';
-      const sKey = supabaseKey(context);
-      const admin = await authState(context, request);
-      if (!admin.authed && token !== sKey) return fail('仅管理员可操作', 401);
-      let deleted = 0;
-
-      // S3: list and delete everything under uploads/
-      if (isS3Configured(context)) {
-        try {
-          let hasMore = true;
-          while (hasMore) {
-            const { files } = await s3ListObjects(context, 1000, 'uploads/', '');
-            if (!files.length) { hasMore = false; break; }
-            for (const f of files) {
-              await s3DeleteObject(context, f.key);
-              deleted++;
-            }
-          }
-        } catch (e) { /* continue */ }
-      }
-
-      // Blob: list and delete everything
-      try {
-        let hasMore = true;
-        while (hasMore) {
-          const result = await control.list({ limit: LIST_MAX_LIMIT, paginate: false });
-          const blobs = result.blobs || [];
-          if (!blobs.length) { hasMore = false; break; }
-          for (const b of blobs) {
-            await control.delete(b.key);
-            deleted++;
-          }
-        }
-      } catch (e) { /* continue */ }
-
-      // Clear Supabase albums + folders
-      try {
-        const base = supabaseUrl(context);
-        const key = supabaseKey(context);
-        if (base && key) {
-          const hdrs = supabaseHeaders(context);
-          await fetch(base + '/rest/v1/albums?id=gt.0', { method: 'DELETE', headers: hdrs });
-          await fetch(base + '/rest/v1/folders?id=gt.0', { method: 'DELETE', headers: hdrs });
-        }
-      } catch (e) { /* continue */ }
-
-      return json({ ok: true, deleted, message: '所有存储已清空' });
-    }
-
     return fail('接口不存在', 404);
   } catch (error) {
-    return fail(`服务端异常：${error && error.message ? error.message : String(error)}`, 500);
+    // 内部报错不直接透传给客户端（避免泄露存储/数据库细节），只记到日志
+    console.error('api error:', error && error.stack ? error.stack : String(error));
+    return fail('服务端异常，请稍后重试', 500);
   }
 }

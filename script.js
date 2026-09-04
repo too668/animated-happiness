@@ -283,6 +283,12 @@ function syncFromServer() {
         };
       });
       saveList(items);
+      if (typeof res.total === 'number') {
+        var tc = document.getElementById('totalCount');
+        if (tc) tc.textContent = res.total;
+        var cl = document.getElementById('countLabel');
+        if (cl) cl.textContent = '共 ' + res.total + ' 张';
+      }
       renderList(items);
       nextCursor = res.nextCursor || null;
       return items;
@@ -295,7 +301,8 @@ function syncFromServer() {
 
 function loadMore() {
   if (!nextCursor) return Promise.resolve();
-  return asyncJson(getApiBase() + '/api/list?limit=100&cursor=' + encodeURIComponent(nextCursor))
+  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  return asyncJson(getApiBase() + '/api/list?limit=100&storage=' + encodeURIComponent(storage) + '&cursor=' + encodeURIComponent(nextCursor))
     .then(function (res) {
       var existing = {};
       var items = getSavedList();

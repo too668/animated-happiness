@@ -123,13 +123,16 @@ export async function onRequest(context) {
   const contentType = knownType || 'application/octet-stream';
   const download = url.searchParams.get('download') === '1';
   const name = key.split('/').pop();
+  const isSvg = ext === '.svg';
 
   const respHeaders = {
     'Content-Type': contentType,
     'Cache-Control': 'public, max-age=3600',
-    'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="${name}"`,
+    // SVG 同源内联可执行脚本（存储型 XSS），强制下载且禁脚本
+    'Content-Disposition': `${download || isSvg ? 'attachment' : 'inline'}; filename="${name}"`,
     'X-Content-Type-Options': knownType ? 'nosniff' : 'default'
   };
+  if (isSvg) respHeaders['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 
   // ── S3 出图 ──
   if (isS3) {
@@ -137,9 +140,9 @@ export async function onRequest(context) {
     try {
       const s3Resp = await s3SignedGet(context, key);
       if (!s3Resp.ok) return notFound();
-      const body = await s3Resp.arrayBuffer();
       if (request.method === 'HEAD') return new Response(null, { status: 200, headers: respHeaders });
-      return new Response(body, { status: 200, headers: respHeaders });
+      // 直接流式转发，不把整个对象读进内存（S3 可到 5GB，缓冲会 OOM）
+      return new Response(s3Resp.body, { status: 200, headers: respHeaders });
     } catch {
       return notFound();
     }
