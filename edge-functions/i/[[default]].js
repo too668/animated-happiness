@@ -18,13 +18,21 @@ const IMAGE_TYPES = {
 
 const store = getStore(STORE_NAME);
 
-const BLOB_KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*[a-zA-Z0-9]\.[a-zA-Z0-9]{1,8}$/;
-const S3_KEY_RE = /^uploads\/[a-zA-Z0-9][a-zA-Z0-9._/-]*[a-zA-Z0-9]\.[a-zA-Z0-9]{1,8}$/;
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Range',
+  'Access-Control-Expose-Headers': 'Content-Length, Content-Type, Content-Disposition, ETag, Cache-Control',
+  'Access-Control-Max-Age': '86400'
+};
+
+const BLOB_KEY_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9._/-]*[a-zA-Z0-9])?\.[a-zA-Z0-9]{1,8}$/;
+const S3_KEY_RE = /^uploads\/[a-zA-Z0-9](?:[a-zA-Z0-9._/-]*[a-zA-Z0-9])?\.[a-zA-Z0-9]{1,8}$/;
 
 const notFound = () =>
   new Response('Not Found', {
     status: 404,
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+    headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' }
   });
 
 function envVar(context, name) {
@@ -47,6 +55,10 @@ function awsUriEncode(str) {
   return encodeURIComponent(str).replace(/[!*'()]/g, c =>
     '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
   );
+}
+
+function awsPathEncode(path) {
+  return String(path).split('/').map(awsUriEncode).join('/');
 }
 
 async function s3Hmac(key, data) {
@@ -77,7 +89,7 @@ async function s3SignedGet(context, key) {
   const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
   const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
   const host = `${bucket}.${new URL(IDRIVE_ENDPOINT).host}`;
-  const pathname = '/' + key;
+  const pathname = awsPathEncode('/' + key);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
@@ -114,6 +126,10 @@ export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
 
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS });
+  }
+
   let key = url.pathname.replace(/^\/i\/?/, '');
   try { key = decodeURIComponent(key); } catch { return notFound(); }
   key = key.replace(/^\/+|\/+$/g, '');
@@ -133,6 +149,7 @@ export async function onRequest(context) {
   const isSvg = ext === '.svg';
 
   const respHeaders = {
+    ...CORS,
     'Content-Type': contentType,
     'Cache-Control': 'public, max-age=3600',
     // SVG 同源内联可执行脚本（存储型 XSS），强制下载且禁脚本
@@ -147,6 +164,12 @@ export async function onRequest(context) {
     try {
       const s3Resp = await s3SignedGet(context, key);
       if (!s3Resp.ok) return notFound();
+      const s3Etag = s3Resp.headers.get('etag');
+      if (s3Etag) respHeaders.ETag = s3Etag;
+      const ifNoneMatch = request.headers.get('if-none-match');
+      if (s3Etag && ifNoneMatch && (ifNoneMatch === s3Etag || ifNoneMatch === '*')) {
+        return new Response(null, { status: 304, headers: respHeaders });
+      }
       if (request.method === 'HEAD') return new Response(null, { status: 200, headers: respHeaders });
       // 直接流式转发，不把整个对象读进内存（S3 可到 5GB，缓冲会 OOM）
       return new Response(s3Resp.body, { status: 200, headers: respHeaders });
@@ -159,18 +182,24 @@ export async function onRequest(context) {
   let body = null;
   let etag = null;
 
-  try { body = await store.get(key, { type: 'stream' }); } catch { body = null; }
-  if (!body) {
-    try { body = await store.get(key, { type: 'arrayBuffer' }); } catch { body = null; }
-    if (!body) return notFound();
-  }
-
   try {
     const meta = await store.getMetadata(key);
     etag = meta && meta.etag ? `"${meta.etag}"` : null;
   } catch { /* 元信息拿不到不影响出图 */ }
 
   if (etag) respHeaders.ETag = etag;
+
+  const ifNoneMatch = request.headers.get('if-none-match');
+  if (etag && ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch === '*')) {
+    return new Response(null, { status: 304, headers: respHeaders });
+  }
+
+  try { body = await store.get(key, { type: 'stream' }); } catch { body = null; }
+  if (!body) {
+    try { body = await store.get(key, { type: 'arrayBuffer' }); } catch { body = null; }
+    if (!body) return notFound();
+  }
+
   if (request.method === 'HEAD') return new Response(null, { status: 200, headers: respHeaders });
   return new Response(body, { status: 200, headers: respHeaders });
 }

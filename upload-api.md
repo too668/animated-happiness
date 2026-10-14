@@ -219,3 +219,16 @@ https://yooy.cc.cd/i/{key}
 | 并发上传 | 无限制 |
 
 > 如果需要上传到腾讯 Blob 存储，将 `storage=s3` 改为 `storage=blob`（上限 20MB）。
+
+---
+
+## 客户端接入（PicGo / Typora）
+
+可使用 PicGo 的「自定义 Web 图床」一键接入：
+
+- **API 地址**：`https://你的域名/api/upload`
+- **POST 参数名**：`file`
+- **JSON 路径**：`url`
+- **自定义请求头**：`{"Authorization": "Bearer yoo_xxxxxxxxxxxxxxxxxxxxxxxx"}`
+- **说明**：单步中转接口限制 ≤950KB（受边缘函数请求体约束）。高清大图建议在 PicGo 启用图片压缩插件，或在网页端走直传。
+

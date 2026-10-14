@@ -78,6 +78,16 @@ function getApiBase() {
   return location.origin;
 }
 
+function currentStorage() {
+  var el = document.getElementById('storageSelect');
+  return el ? el.value : 'blob';
+}
+
+function currentMode() {
+  var el = document.getElementById('uploadMode');
+  return el ? el.value : 'direct';
+}
+
 function getAliases() {
   try { return JSON.parse(localStorage.getItem(ALIAS_KEY) || '{}') || {}; } catch (e) { return {}; }
 }
@@ -108,7 +118,30 @@ function compressToLimit(file, limit) {
     ));
   }
 
-  return createImageBitmap(file).then(function (bitmap) {
+  function loadImageElement(f) {
+    if (typeof createImageBitmap === 'function') {
+      return createImageBitmap(f);
+    }
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      var url = URL.createObjectURL(f);
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        resolve({
+          width: img.naturalWidth || img.width,
+          height: img.naturalHeight || img.height,
+          _raw: img
+        });
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error('图片加载解析失败'));
+      };
+      img.src = url;
+    });
+  }
+
+  return loadImageElement(file).then(function (bitmap) {
     var maxEdge = 4096;
     var quality = 0.85;
     var attempt = 0;
@@ -120,7 +153,7 @@ function compressToLimit(file, limit) {
       var h = Math.max(1, Math.round(bitmap.height * scale));
       var canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+      canvas.getContext('2d').drawImage(bitmap._raw || bitmap, 0, 0, w, h);
 
       var type = extOf(file.name) === 'png' ? 'image/png' : 'image/jpeg';
       var outName = file.name.replace(/\.[^.]+$/, '') + (type === 'image/png' ? '.png' : '.jpg');
@@ -151,7 +184,7 @@ function compressToLimit(file, limit) {
 function uploadDirect(file) {
   var base = getApiBase();
   var contentType = file.type || 'application/octet-stream';
-  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  var storage = currentStorage();
   
   return asyncJson(base + '/api/upload-url?storage=' + encodeURIComponent(storage), {
     method: 'POST',
@@ -177,7 +210,7 @@ function uploadRelay(file) {
     return Promise.reject(new Error('中转只收图片，请用「原图直传」'));
   }
   var base = getApiBase();
-  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  var storage = currentStorage();
   
   return compressToLimit(file, RELAY_LIMIT).then(function (r) {
     var blob = r.blob || file;
@@ -205,15 +238,8 @@ function uploadFiles(files) {
   var ok = 0, failed = [];
   var chain = Promise.resolve();
 
-  var mode = currentMode();
   function runUpload(file) {
-    if (mode === 'relay') {
-      return uploadRelay(file).catch(function (e) {
-        // 非图片 / GIF / SVG / BMP 中转不支持，自动退回原图直传
-        if (/只收图片|GIF|SVG|BMP/.test(e.message)) return uploadDirect(file);
-        throw e;
-      });
-    }
+    // 私有网盘原则：100% 磁盘镜像级原件直传，绝无压缩、绝无质量损失
     return uploadDirect(file);
   }
 
@@ -267,7 +293,7 @@ function updateCounts(items) {
 var nextCursor = null;
 
 function syncFromServer() {
-  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  var storage = currentStorage();
   return asyncJson(getApiBase() + '/api/list?limit=100&storage=' + encodeURIComponent(storage))
     .then(function (res) {
       var aliases = getAliases();
@@ -301,7 +327,7 @@ function syncFromServer() {
 
 function loadMore() {
   if (!nextCursor) return Promise.resolve();
-  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  var storage = currentStorage();
   return asyncJson(getApiBase() + '/api/list?limit=100&storage=' + encodeURIComponent(storage) + '&cursor=' + encodeURIComponent(nextCursor))
     .then(function (res) {
       var existing = {};
@@ -317,7 +343,7 @@ function loadMore() {
 }
 
 function deleteItem(key) {
-  var storage = document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
+  var storage = currentStorage();
   return asyncJson(getApiBase() + '/api/delete?key=' + encodeURIComponent(key) + '&storage=' + encodeURIComponent(storage), { method: 'DELETE' })
     .then(function () { return true; })
     .catch(function (e) {
@@ -351,22 +377,34 @@ function renderList(items) {
   for (var i = 0; i < filtered.length; i++) {
     var it = filtered[i];
     var ext = extOf(it.key || it.name).toUpperCase();
-    var storageLabel = it.storage === 's3' ? '<span class="badge info" style="font-size:0.65rem;margin-left:6px;">S3</span>' : '<span class="badge success" style="font-size:0.65rem;margin-left:6px;">Blob</span>';
+    var storageLabel = it.storage === 's3' ? '<span class="badge info" style="font-size:0.65rem;">S3</span>' : '<span class="badge success" style="font-size:0.65rem;">Blob</span>';
     html += '<div class="image-item" data-key="' + esc(it.key) + '">' +
       '<img src="' + esc(it.url) + '" alt="' + esc(it.name) + '" loading="lazy" />' +
       '<div class="image-meta">' +
-        '<strong title="' + esc(it.name) + '">' + esc(it.name) + '</strong>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;">' +
+          '<strong title="' + esc(it.name) + '" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(it.name) + '</strong>' +
+          storageLabel +
+        '</div>' +
         '<div class="muted">' + esc(ext || '文件') + (it.size ? ' · ' + esc(humanSize(it.size)) : '') + (it.aliasOnly ? ' · 别名' : '') + '</div>' +
         '<div class="row-inline">' +
           '<button class="small-btn" data-a="view" data-k="' + esc(it.key) + '" title="新标签页打开">' + ICONS.view + '</button>' +
           '<button class="small-btn" data-a="copy" data-k="' + esc(it.key) + '" title="复制链接">' + ICONS.copy + '</button>' +
           '<button class="small-btn" data-a="alias" data-k="' + esc(it.key) + '" title="设置显示别名">' + ICONS.alias + '</button>' +
           '<button class="small-btn danger" data-a="delete" data-k="' + esc(it.key) + '" title="删除">' + ICONS.trash + '</button>' +
-        '</div></div><div class="row-inline" style="margin-top:4px;">' + storageLabel + '</div></div>';
+        '</div>' +
+      '</div>' +
+    '</div>';
   }
   root.innerHTML = html + moreBtn;
   refreshIcons();
   bindMore();
+
+function formatLink(url, name, fmt) {
+  if (fmt === 'markdown') return '![' + (name || 'image') + '](' + url + ')';
+  if (fmt === 'html') return '<img src="' + url + '" alt="' + (name || 'image') + '" />';
+  if (fmt === 'bbcode') return '[img]' + url + '[/img]';
+  return url;
+}
 
   Array.prototype.forEach.call(root.querySelectorAll('.small-btn'), function (btn) {
     btn.addEventListener('click', function () {
@@ -378,7 +416,11 @@ function renderList(items) {
       if (act === 'view') {
         window.open(target.url, '_blank');
       } else if (act === 'copy') {
-        copyText(target.url);
+        var fmtEl = document.getElementById('copyFormatSelect');
+        var fmt = (fmtEl && fmtEl.value) || localStorage.getItem('yoo_copy_format') || 'url';
+        var formatted = formatLink(target.url, target.name, fmt);
+        var label = fmt === 'markdown' ? 'Markdown' : fmt === 'html' ? 'HTML' : fmt === 'bbcode' ? 'BBCode' : '链接';
+        copyText(formatted, '已复制 ' + label + ' 格式');
       } else if (act === 'alias') {
         var nn = window.prompt('设置显示别名（只影响本浏览器的显示，不会改服务器上的文件名）', target.name);
         if (!nn || !nn.trim()) return;
@@ -423,13 +465,31 @@ function bindMore() {
 }
 
 function copyText(text, msg) {
+  function fallback() {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '-9999px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) { showToast(msg || '链接已复制', 'success'); return; }
+    } catch (e) {}
+    showToast('复制失败，请手动选取', 'error');
+  }
+
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(
       function () { showToast(msg || '链接已复制', 'success'); },
-      function () { showToast('复制失败，请手动选取', 'error'); }
+      function () { fallback(); }
     );
   } else {
-    showToast('此浏览器不支持自动复制', 'error');
+    fallback();
   }
 }
 
@@ -443,35 +503,23 @@ function attachEvents() {
   var modeHint = document.getElementById('modeHint');
   var dropHint = document.getElementById('dropHint');
 
-function currentStorage() {
-  return document.getElementById('storageSelect') ? document.getElementById('storageSelect').value : 'blob';
-}
-function currentMode() {
-  return document.getElementById('uploadMode') ? document.getElementById('uploadMode').value : 'direct';
-}
-
-// 压缩中转只走 Blob（后端 /api/upload 写死 Blob）；S3 下禁掉该选项并强制直传
+// 网盘纯无损直传：S3 支持 5GB~10GB 大文件，Blob 支持 20MB
 function syncStorageMode() {
-  var relayOpt = document.querySelector('#uploadMode option[value="relay"]');
-  if (relayOpt) relayOpt.disabled = currentStorage() === 's3';
-  var modeEl = document.getElementById('uploadMode');
-  if (modeEl && modeEl.value === 'relay' && currentStorage() === 's3') {
-    modeEl.value = 'direct';
-  }
+  var s = currentStorage();
+  var limitNum = document.getElementById('directLimitNum');
+  if (limitNum) limitNum.textContent = s === 's3' ? '5 GB' : '20 MB';
   refreshUploadHint();
 }
 
 function refreshUploadHint() {
   if (!modeHint) return;
   var s = currentStorage();
-  var m = currentMode();
   var storageTxt = s === 's3'
-    ? '<strong>iDrive e2 S3</strong>：直传到 S3 桶，最大 5GB，任意格式。'
-    : '<strong>腾讯云 Blob</strong>：直传到 Blob 存储，最大 20MB，任意格式。';
-  var modeTxt = m === 'relay'
-    ? ' <span style="color:var(--warning)">压缩中转：</span>字节经过函数代理，仅收图片，超过 950KB 前端自动压（GIF / SVG 超限请改用直传）。'
-    : ' <span style="color:var(--brand)">原图直传：</span>字节不经函数，保留原图，任意格式。';
+    ? '<strong>iDrive e2 S3 大容量存储</strong>：客户端高速直传到 S3 存储桶，单文件最大 5GB（可拓展至 10GB），任意文件格式。'
+    : '<strong>腾讯云 Blob 存储</strong>：客户端高速直传到 Blob 存储，单文件最大 20MB，任意文件格式。';
+  var modeTxt = ' <span style="color:var(--brand);font-weight:600;"><i data-lucide="shield-check" class="icon-xs"></i> 100% 磁盘无损原件保障：</span>逐比特与本地原件一致，绝无压缩、绝无质量损失。';
   modeHint.innerHTML = storageTxt + modeTxt;
+  refreshIcons();
 }
 
 function applyStorage() {
@@ -483,6 +531,16 @@ function applyStorage() {
 if (storageSelect) storageSelect.addEventListener('change', applyStorage);
 var uploadModeEl = document.getElementById('uploadMode');
 if (uploadModeEl) uploadModeEl.addEventListener('change', refreshUploadHint);
+
+var copyFormatSelect = document.getElementById('copyFormatSelect');
+if (copyFormatSelect) {
+  var savedFmt = localStorage.getItem('yoo_copy_format');
+  if (savedFmt) copyFormatSelect.value = savedFmt;
+  copyFormatSelect.addEventListener('change', function () {
+    localStorage.setItem('yoo_copy_format', copyFormatSelect.value);
+    showToast('已切换复制格式为：' + copyFormatSelect.options[copyFormatSelect.selectedIndex].text, 'info');
+  });
+}
 
   document.addEventListener('change', function (e) {
     if (e.target && e.target.id === 'uploadInput') {

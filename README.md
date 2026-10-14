@@ -1,92 +1,84 @@
-# YOO 图床
+# YOO · 私有云盘 / 网盘
 
-基于腾讯 EdgeOne Makers（Edge Functions + Blob Storage）的个人图床。前端是三个静态页，后端是两个函数路由。
+基于腾讯 EdgeOne Functions 与 S3 (iDrive e2) / Blob 双引擎架构的高性能私有云盘系统。支持任意文件格式（文档、音视频、压缩包、安装包等）超大文件直传（最高 5GB~10GB）、树状目录管理、移动端多端适配与专属私有密钥隔离。
 
-线上地址：<https://yooy.cc.cd> · 管理后台：`/upload.html` · API 文档：`/api.html`
+- **线上地址**：<https://yooy.cc.cd>
+- **云盘文件管理器**：`/browser.html`
+- **极速上传后台**：`/upload.html`
+- **媒体相册视图**：`/photos.html`
+- **API 接口文档**：`/api.html`
+
+---
+
+## 核心设计与特性
+
+1. **极致轻量的前端架构**
+   - **技术栈**：纯原生前端（Vanilla HTML5 + 现代化 CSS3 + ES6 原生 JavaScript），零框架（无 React/Vue/Webpack/Vite 构建负担），秒级首屏加载。
+   - **极端兼容性（iOS 兼容优化）**：
+     - 语法基准收敛在稳定 ES 标准，无可选链 `?.` 与空值合并 `??` 等会导致老版本 Safari（iOS <13.4）白屏崩溃的语法；
+     - 针对老旧 WebKit（iOS 11~14）缺失的 `createImageBitmap`，内置基于 `new Image()` 与 `createObjectURL` 的无缝 Polyfill 回退机制；
+     - 无论在新版手机还是老款 iPad/iPhone 上，皆能顺畅运行。
+
+2. **超大容量与任意格式存储**
+   - **不是图床，是真正的私有云盘**：全面解除图片后缀限制，支持 `.zip`, `.mp4`, `.pdf`, `.dmg`, `.iso`, `.apk` 等任意格式。
+   - **S3 协议原生支持（iDrive e2）**：预置支持 5GB~10GB 超大文件客户端直接分片/签名直传（Presigned PUT），字节不路过中间函数，打通真实大文件上传通道。
+   - **EdgeOne Blob 降级引擎**：内置 EdgeOne Blob 本地化存储，单文件支持最高 20MB 直传。
+
+3. **隐私与权限隔离**
+   - 多级鉴权：管理员独立密码会话隔离，支持生成多权限 API Key（上传、查看、删除）。
+   - 外链分发防护：提供原文件直接下载（`?download=1`）及防盗链控制。
+
+---
 
 ## 目录结构
 
 ```txt
 .
 ├── edge-functions/
-│   ├── api/[[default]].js     # /api/*  控制面：签名地址、中转上传、列表、元信息、删除、健康检查
-│   └── i/[[default]].js       # /i/*    图片 serve：把字节从存储读出来吐回给访问者
-├── index.html                 # 首页
-├── upload.html                # 管理后台（上传 / 列表 / 复制 / 删除）
-├── api.html                   # API 文档
-├── script.js                  # 前端逻辑，被上面三个页面共用
-├── styles.css                 # 主题、布局、明暗切换
-├── .well-known/               # 域名校验文件，别删
+│   ├── api/[[default]].js     # /api/*  云盘控制面：S3直传签名、健康检查、目录管理、删除
+│   └── i/[[default]].js       # /i/*    文件读取与分发服务：HTTP 304 缓存、ETag、范围请求
+├── index.html                 # 网盘门户首页
+├── browser.html               # 树状文件浏览器（文件管理、文件夹重命名、移动、批量操作）
+├── upload.html                # 大文件直传中心（拖拽、批量、进度指示）
+├── photos.html                # 媒体流与相册预览
+├── gallery.html               # 存储概览与多媒体看板
+├── api.html                   # 开放存储与管理 API 文档
+├── script.js                  # 前端核心业务逻辑（全端老旧设备兼容、直传引擎、UI交互）
+├── styles.css                 # 响应式布局与明暗主题
+├── .well-known/               # 域名与SSL校验配置
 └── package.json
 ```
 
-后端只有一个运行时：Edge Functions。上面这份目录就是全部代码。
+---
 
-## 两个必须先理解的事实
+## 存储引擎与上传能力
 
-这两条决定了整个设计，跟直觉相反，所以写在最前面。
+| 存储方式 | 存储上限 | 支持格式 | 上传机制 | 说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| **S3 兼容存储 (iDrive e2)** | **5GB ~ 10GB** | **任意文件** | 客户端 Presigned 直传 | 字节直接上传至 S3 节点，不占函数内存，专为大文件打造 |
+| **Blob 签名直传** | **20MB** | **任意文件** | 客户端 `PUT` 临时授权地址 | 绕过边缘函数 1MB 请求体限制，适合中小文件 |
+| **Blob 压缩中转** | 950KB | 仅图片 | 函数中转写入 | 适合轻量脚本或命令行快速小文件同步 |
 
-### 1. Blob 存储没有任何公开读取地址
+---
 
-官方文档原话：
+## 快速配置
 
-> Blob 面向 Makers Functions 的运行时数据需要（如读写、查询、加工），**不建议作为公网图床或 CDN 使用**。
+### 1. S3 兼容对象存储配置（以 iDrive e2 / MinIO 为例）
+在 EdgeOne Pages / 函数控制台配置如下环境变量：
+- `S3_ENDPOINT`：S3 终端节点（例如 `https://s3.ap-northeast-1.idrivee2.com`）
+- `S3_REGION`：所属区域（如 `ap-northeast-1`）
+- `S3_BUCKET`：存储桶名称（如 `yoo`）
+- `S3_ACCESS_KEY_ID`：S3 Access Key
+- `S3_SECRET_ACCESS_KEY`：S3 Secret Key
 
-SDK 的全部方法里也没有 `getDownloadUrl` 之类的东西，而 `createUploadUrl` 签出来的地址被绑死成只能 `PUT`，拿来 `GET` 会 403。
+### 2. 元数据与权限数据库（Supabase）
+API Key、树状目录及相册结构保存在 Supabase（PostgreSQL）：
+- `SUPABASE_URL`：Supabase 项目 API URL
+- `SUPABASE_SECRET_KEY`：Supabase Service Role Key
 
-**结论**：`https://域名/<key>` 这种链接不可能成立（实测 404）。图片必须由一个函数路由把字节读出来再吐回去。这就是 `/i/` 路由存在的原因，也是你的图片链接的真正形态：
-
-```txt
-https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png
-                 └key──────────────────────────┘
-```
-
-### 2. Edge 的 1MB 限制只管「进来的」，不管「出去的」
-
-边缘函数的限制是：**请求体 1MB**、CPU 200ms（不含 I/O 等待），而**响应体文档未设上限**。
-
-实测：一张 2.39MB（2,394,832 字节）的原图经 `/i/` 返回，**逐字节与原件一致**；
-首次回源 1.14s，之后命中边缘约 0.7s（这个数值取决于测试机网络，只作量级参考）。
-
-**结论**：1MB 这个坎只出现在「把文件塞进函数」这一侧，而它已经被签名直传绕开了（见下节）。
-往外发图完全不受影响，所以整个后端一个 Edge Functions 运行时就够了。
-也别再引入第二个运行时去抢同一条 `/api/*` 路由——跨目录的路由优先级平台没有文档保证，
-旧版本就是因为两套函数目录同时声明 `/api/*` 而行为不可预期。
-
-## 上传：两条路
-
-文件要进存储，区别只在**字节是否经过边缘函数**。
-
-| | 压缩中转 | 原图直传 |
-| --- | --- | --- |
-| 路径 | `PUT/POST /api/upload` | `POST /api/upload-url` → 客户端 `PUT` |
-| 谁送字节进存储 | 函数 | 浏览器 |
-| 上限 | 950KB | 20MB（存储单值 25MB） |
-| 格式 | 仅图片 | **任意** |
-| 是否压缩 | 超限自动压 | 原图字节，不动 |
-| 典型用途 | 脚本、`curl` 一行传小图 | 网页端传手机原图、HEIC、大图 |
-
-直传时字节不路过函数，所以 1MB 那个请求体上限压根不会被触发——这是能传大图的唯一办法。
-
-### 中转的前端压缩逻辑
-
-`script.js` 的 `compressToLimit()` 用 canvas 逐步降尺寸和质量，压到 950KB 以下再上传。**GIF 和 SVG 不压**：canvas 会让 GIF 丢动画、让 SVG 变成栅格图，这两种超限时提示改用直传。
-
-## 配置
-
-改代码里两处即可，两边必须一致：
-
-```js
-const STORE_NAME = 'yoo-images';   // edge-functions/api/[[default]].js
-const STORE_NAME = 'yoo-images';   // edge-functions/i/[[default]].js
-```
-
-API key / 文件夹 / 图册元数据存 **Supabase**（环境变量 `SUPABASE_URL` / `SUPABASE_SECRET_KEY`，EdgeOne 控制台配置），与图片桶完全隔离；API key 记录只存 sha256 哈希，密钥明文不落库，吊销立即生效。`/api/health` 的 `keys.ok` 报告 Supabase 连通性。
-
-需要三张表（Postgres / Supabase SQL 编辑器执行一次即可）：
-
+执行以下 SQL 完成数据表初始化：
 ```sql
-create table api_keys (
+create table if not exists api_keys (
   id          text primary key,
   secret_hash text unique not null,
   name        text not null default '未命名',
@@ -94,14 +86,14 @@ create table api_keys (
   created_at  timestamptz not null default now()
 );
 
-create table folders (
+create table if not exists folders (
   storage     text not null,
   path        text not null,
   parent_path text not null default '',
   primary key (storage, path)
 );
 
-create table albums (
+create table if not exists albums (
   id         bigint generated always as identity primary key,
   storage    text not null,
   path       text not null,
@@ -111,60 +103,40 @@ create table albums (
 );
 ```
 
-存储桶**不需要预先创建**，`getStore()` 首次写入时自动建（已实测：`/api/health` 对新桶名返回 `storage.ok: true`）。
+---
 
-函数内部 `getStore()` 自动鉴权，**不需要 API token**。只有从 EdgeOne 之外访问存储时才需要 `projectId` + token。
+## 核心接口说明
 
-图片域名不写死——serve 与所有返回的链接都用 `new URL(request.url).origin`，所以预览域名下也能得到正确链接。
+| 方法 | 路由 | 描述 |
+| :--- | :--- | :--- |
+| `GET` | `/api/health` | 实时探测 S3 可达性与 Blob 运行状态 |
+| `POST` | `/api/upload-url` | 获取 S3 / Blob 签名直传地址（支持超大文件） |
+| `GET` | `/api/list` | 分页与目录文件列表查询（支持 `folder`、`search`、`cursor`） |
+| `GET` | `/i/<key>` | 文件下载与在线预览（带 `?download=1` 强制触发另存为） |
+| `DELETE` | `/api/delete` | 文件与目录批量删除（已接入 S3 Multi-Object Delete） |
+| `POST` | `/api/folders` | 新建、移动或重命名树状目录 |
 
-## API
+---
 
-全部返回 JSON（除 `/i/`），字段含义与 curl 示例见 `/api.html`，那里每条都实测过。
+## 部署与健康探测
 
-数据接口（upload / upload-url / list / meta / delete）需**管理员 Cookie 或 API key**：key 在管理后台「API Keys」卡片签发，带 upload / list / delete 三种权限，`Authorization: Bearer yoo_...` 或 `?key=` 携带；不带凭证 401、权限不足 403。`/i/<key>` 直链与 `/api/health` 保持公开。
+推送到 GitHub `main` 分支后，EdgeOne Pages 将自动完成构建分发。
 
-```txt
-POST   /api/upload-url   直传第一步：换取签名 PUT 地址     ≤20MB · 任意格式
-PUT    /api/upload        中转：原始字节（?name=xxx.png）   ≤950KB · 仅图片
-POST   /api/upload        中转：multipart/form-data        ≤950KB · 仅图片
-GET    /i/<key>           图片本体，即你要分享的链接        ?download=1 转为下载
-GET    /api/list          列表（limit / cursor / detail / all）
-GET    /api/meta          单个对象的存储元信息
-GET    /api/health        存储可达性 + 各路径上限
-DELETE /api/delete        删除（?key= 或 ?url=）
-```
-
-一条命令传图：
-
-```bash
-curl -X PUT "https://yooy.cc.cd/api/upload?name=demo.png" \
-  -H "Content-Type: image/png" --data-binary @demo.png
-```
-
-## 部署
-
-推 `main` 到 GitHub，EdgeOne Pages 自动构建。函数依赖由 `package.json` 安装，`node_modules/` 不入库。
-
-上线后第一件事打健康检查，能立刻区分「代码没部署上去」和「存储不通」：
-
+部署完成后，通过调用健康探针接口即可验证后端与 S3 对象存储的连通性：
 ```bash
 curl https://yooy.cc.cd/api/health
 ```
-
-## 写这个仓库时踩到的坑
-
-`@edgeone/pages-blob` 的类型定义（`dist/index.d.ts`）是唯一可靠的依据，文档和直觉在这里都会骗人。下面这些全部是实测崩过的：
-
-| 误用 | 真实情况 |
-| --- | --- |
-| `file instanceof File` | Edge 运行时**没有 `File` 全局对象**，直接 `ReferenceError`。改用鸭子类型 `typeof file.arrayBuffer === 'function'` |
-| `store.set(key, new Uint8Array(...))` | `BlobInput` 只接受 `string \| ArrayBuffer \| Blob \| ReadableStream`。要传 `ArrayBuffer` |
-| `store.set(key, buf, { contentType })` | `SetOptions` 里**没有 `contentType`**，被静默丢弃。Content-Type 只能在 serve 路由上决定 |
-| `store.head(key)` | 不存在，真实方法是 `getMetadata()`。这个 bug 会让删除对任何文件都返回 404 |
-| `store.list({ limit, cursor })` | 默认 `paginate: true` 时自动聚合全部页且**不返回 cursor**，分页永远是假的。必须显式 `paginate: false` |
-| 从 `list()` 结果里读 `size` | `BlobInfo` 只有 `{ key, etag }`。要大小只能逐项 `getMetadata()`（即 `?detail=1`） |
-| 用默认句柄查「文件还在不在」 | 默认是 `eventual`（最终一致）的读，SDK 文档说明这类读可能给出不新鲜的结果。判存在统一走 `getStore({ name, consistency: 'strong' })`，宁可多花一次强一致读也不谎报存在 |
-| 给图片响应打 `max-age=31536000, immutable` | 边缘节点会缓存一年，于是**删掉的图还能继续访问一年**。实测删除一个被反复请求过的链接：后续 6 次请求全部仍返回 200（边缘副本），而 `/api/meta` 已经是 404（源站真的删掉了）。官方文档确认 Makers **没有从函数内部刷新指定 URL 边缘缓存的能力**，所以 `max-age` 就等于删除延迟本身。现值收敛成 `public, max-age=3600`，并去掉 `stale-while-revalidate` / `immutable`（那两个会把窗口拖到近一天、还禁止过期后回源校验） |
-| 以为签名直传失败能拿到 403 | 拿 `uploadUrl` 去 `GET` 确实有干净的 403 `SignatureDoesNotMatch`；但**被拒的写**（Content-Type 与签名不符 / 方法不是 PUT / 签名被动过）会被存储网关直接掐断连接：HTTP/2 下是 stream `INTERNAL_ERROR`，curl 记 `000`。不变量是「写入没成功、存储里不留痕」，但错误信号是连接级别的，客户端要按失败处理并重签 |
-
-另有一条平台注意事项：平台的默认预览域名有内容合规限制（预览链接 3 小时过期、大陆访问可能 401），所以这个站点绑了自定义域名。
+响应示例：
+```json
+{
+  "ok": true,
+  "s3": {
+    "configured": true,
+    "accessible": true,
+    "endpoint": "https://s3.ap-northeast-1.idrivee2.com",
+    "region": "ap-northeast-1",
+    "bucket": "yoo",
+    "s3MaxBytes": 5368709120
+  }
+}
+```

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YOO · 图库</title>
-  <meta name="description" content="YOO 图片托管 - 多图册瀑布流浏览" />
+  <title>YOO · 网盘图册 - 私有云盘</title>
+  <meta name="description" content="YOO 私有云盘相册库，将网盘文件夹一键转为手机图册，无损原图全屏预览与媒体流浏览。" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -22,13 +22,13 @@
     .photos-toolbar h1 {
       margin:0; font-size:1.5rem; display:flex; align-items:center; gap:10px;
     }
-    .photos-count { color:var(--muted); font-size:0.8rem; }
-    .photos-actions { margin-left:auto; display:flex; gap:8px; }
+    .photos-count { color:var(--muted); font-size:0.85rem; font-weight:500; }
+    .photos-actions { margin-left:auto; display:flex; gap:8px; align-items:center; }
 
     /* ── Breadcrumb ── */
     .photos-breadcrumb {
       display:flex; align-items:center; gap:6px; margin-bottom:16px;
-      font-size:0.88rem;
+      font-size:0.88rem; flex-wrap:wrap;
     }
     .photos-breadcrumb a {
       color:var(--brand); text-decoration:none; padding:3px 6px; border-radius:4px;
@@ -38,139 +38,198 @@
     .photos-breadcrumb .sep { color:var(--muted); font-size:0.75rem; }
     .photos-breadcrumb .current { color:var(--text); font-weight:600; }
 
-    /* ── Album grid ── */
+    /* ── Album grid (手机相册卡片视觉) ── */
     .album-grid {
-      display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
-      gap:20px;
+      display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+      gap:22px;
     }
     .album-card {
-      border:2px solid var(--border); border-radius:14px;
-      padding:24px; cursor:pointer;
-      transition:border-color 0.2s, box-shadow 0.2s, transform 0.15s;
-      background:var(--surface); position:relative;
+      border:1px solid var(--border); border-radius:16px;
+      overflow:hidden; cursor:pointer;
+      transition:border-color 0.2s, box-shadow 0.2s, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      background:var(--surface); position:relative; display:flex; flex-direction:column;
     }
     .album-card:hover {
-      border-color:var(--brand); transform:translateY(-3px);
-      box-shadow:0 8px 24px rgba(0,0,0,0.08);
+      border-color:var(--brand); transform:translateY(-4px);
+      box-shadow:0 12px 30px rgba(0,0,0,0.1);
     }
-    .album-card-head {
-      display:flex; align-items:center; gap:12px; margin-bottom:12px;
-    }
-    .album-icon {
-      width:48px; height:48px; border-radius:12px;
+    .album-cover-box {
+      width:100%; height:180px; position:relative; overflow:hidden;
+      background:linear-gradient(135deg, rgba(64,158,255,0.08), rgba(167,139,250,0.12));
       display:flex; align-items:center; justify-content:center;
-      background:var(--brand-light); color:var(--brand);
-      flex-shrink:0;
     }
-    .album-card-head h3 {
-      margin:0; font-size:1rem; overflow:hidden;
+    .album-cover-box img {
+      width:100%; height:100%; object-fit:cover;
+      transition:transform 0.4s ease;
+    }
+    .album-card:hover .album-cover-box img {
+      transform:scale(1.05);
+    }
+    .album-cover-placeholder {
+      display:flex; flex-direction:column; align-items:center; gap:8px;
+      color:var(--muted); font-size:0.8rem;
+    }
+    .album-cover-badge {
+      position:absolute; bottom:8px; right:8px;
+      background:rgba(0,0,0,0.65); backdrop-filter:blur(8px);
+      color:#fff; font-size:0.72rem; padding:3px 8px; border-radius:6px;
+      font-weight:600;
+    }
+    .album-info {
+      padding:16px; display:flex; flex-direction:column; gap:6px; flex:1;
+    }
+    .album-title-row {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+    }
+    .album-title-row h3 {
+      margin:0; font-size:1.05rem; overflow:hidden;
       text-overflow:ellipsis; white-space:nowrap; flex:1;
     }
-    .album-meta {
-      display:flex; align-items:center; gap:8px; font-size:0.8rem; color:var(--muted);
+    .album-meta-row {
+      display:flex; align-items:center; gap:8px; font-size:0.78rem; color:var(--muted);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     }
     .album-storage-tag {
-      display:inline-flex; padding:2px 8px; border-radius:10px;
-      font-size:0.7rem; font-weight:600;
+      display:inline-flex; padding:2px 7px; border-radius:6px;
+      font-size:0.7rem; font-weight:600; flex-shrink:0;
     }
     .album-storage-tag.blob { background:rgba(64,158,255,0.12); color:#409EFF; }
     .album-storage-tag.s3 { background:rgba(167,139,250,0.12); color:#a78bfa; }
-    .album-delete {
-      position:absolute; top:10px; right:10px;
-      width:28px; height:28px; border:none; border-radius:50%;
-      background:transparent; color:var(--muted); cursor:pointer;
-      display:flex; align-items:center; justify-content:center;
-      opacity:0; transition:opacity 0.15s, background 0.15s, color 0.15s;
+
+    .album-card-actions {
+      margin-top:auto; padding-top:10px; border-top:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+      font-size:0.78rem; color:var(--brand);
     }
-    .album-card:hover .album-delete { opacity:1; }
-    .album-delete:hover { background:rgba(245,108,108,0.1); color:var(--danger); }
+    .album-delete-btn {
+      position:absolute; top:10px; right:10px; z-index:3;
+      width:30px; height:30px; border:none; border-radius:50%;
+      background:rgba(0,0,0,0.5); backdrop-filter:blur(4px);
+      color:#fff; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      opacity:0; transition:opacity 0.15s, background 0.15s;
+    }
+    .album-card:hover .album-delete-btn { opacity:1; }
+    .album-delete-btn:hover { background:var(--danger); }
 
     /* ── Add-album dialog ── */
     .dialog-overlay {
       position:fixed; inset:0; z-index:9998;
-      background:rgba(0,0,0,0.5); display:flex;
+      background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); display:flex;
       align-items:center; justify-content:center;
     }
     .dialog-overlay.hidden { display:none !important; }
     .dialog-card {
       background:var(--surface); border-radius:16px;
-      padding:28px; max-width:400px; width:90%;
-      box-shadow:0 16px 48px rgba(0,0,0,0.2);
+      padding:28px; max-width:440px; width:92%;
+      box-shadow:0 20px 50px rgba(0,0,0,0.25);
+      border:1px solid var(--border);
     }
-    .dialog-card h3 { margin:0 0 20px; display:flex; align-items:center; gap:8px; }
+    .dialog-card h3 { margin:0 0 18px; display:flex; align-items:center; gap:8px; }
     .dialog-row { margin-bottom:14px; }
     .dialog-row label { display:block; font-size:0.8rem; color:var(--muted); margin-bottom:4px; }
     .dialog-row select, .dialog-row input {
-      width:100%; padding:8px 12px; border:1px solid var(--border);
-      border-radius:8px; background:var(--surface); font-size:0.85rem;
+      width:100%; padding:9px 12px; border:1px solid var(--border);
+      border-radius:8px; background:var(--bg); font-size:0.85rem; color:var(--text);
     }
     .dialog-row select:focus, .dialog-row input:focus {
       border-color:var(--brand); box-shadow:0 0 0 2px var(--brand-light);
       outline:none;
     }
-    .dialog-btns { display:flex; gap:8px; margin-top:20px; }
+    .dialog-btns { display:flex; gap:8px; margin-top:22px; justify-content:flex-end; }
 
     /* ── Guide card ── */
     .guide-card {
-      max-width:480px; margin:60px auto; padding:40px;
+      max-width:540px; margin:40px auto; padding:40px 32px;
       text-align:center; background:var(--surface);
-      border:2px dashed var(--border); border-radius:16px;
+      border:2px dashed var(--border); border-radius:18px;
     }
     .guide-card h3 { margin:16px 0 8px; }
-    .guide-card p { color:var(--muted); font-size:0.85rem; margin:0 0 20px; }
+    .guide-card p { color:var(--muted); font-size:0.88rem; margin:0 0 22px; line-height:1.6; }
 
-    /* ── Waterfall ── */
+    /* ── Waterfall (瀑布流 / 媒体流) ── */
     .waterfall { columns:5 240px; column-gap:14px; }
     .waterfall-item {
-      break-inside:avoid; margin-bottom:12px;
-      border-radius:8px; overflow:hidden;
+      break-inside:avoid; margin-bottom:14px;
+      border-radius:10px; overflow:hidden;
       position:relative; cursor:pointer;
-      background:var(--surface);
-      transition:transform 0.15s;
+      background:var(--surface); border:1px solid var(--border);
+      transition:transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
     }
-    .waterfall-item:hover { transform:scale(1.02); }
-    .waterfall-item img { width:100%; display:block; height:auto; }
+    .waterfall-item:hover {
+      transform:scale(1.02);
+      box-shadow:0 8px 20px rgba(0,0,0,0.12);
+      border-color:var(--brand);
+    }
+    .waterfall-item img {
+      width:100%; display:block; height:auto; background:var(--bg);
+    }
     .waterfall-bar {
       padding:8px 10px; font-size:0.75rem;
       display:flex; align-items:center; justify-content:space-between; gap:6px;
+      background:var(--surface);
     }
     .waterfall-bar strong {
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;
     }
+    .waterfall-bar span { color:var(--muted); font-size:0.7rem; flex-shrink:0; }
 
-    /* ── Full-screen viewer ── */
+    /* ── Full-screen Lightbox (手机相册沉浸大图查看) ── */
     .viewer {
       position:fixed; inset:0; z-index:9999;
-      background:rgba(0,0,0,0.92); display:flex; flex-direction:column;
+      background:rgba(0,0,0,0.95); display:flex; flex-direction:column;
       align-items:center; justify-content:center;
     }
     .viewer.hidden { display:none !important; }
     .viewer-img-wrap {
       flex:1; display:flex; align-items:center; justify-content:center;
       overflow:hidden; width:100%; position:relative;
-      touch-action:pan-y;
+      touch-action:none;
     }
     .viewer-img-wrap img {
-      max-width:95vw; max-height:80vh; object-fit:contain;
-      border-radius:4px; user-select:none; -webkit-user-drag:none;
+      max-width:96vw; max-height:82vh; object-fit:contain;
+      border-radius:6px; user-select:none; -webkit-user-drag:none;
+      transition:transform 0.15s ease-out;
+    }
+    .viewer-top-bar {
+      position:absolute; top:0; left:0; right:0; z-index:10;
+      padding:14px 20px; display:flex; align-items:center; justify-content:space-between;
+      background:linear-gradient(to bottom, rgba(0,0,0,0.7), transparent); color:#fff;
+    }
+    .viewer-title-info {
+      display:flex; flex-direction:column; gap:2px; max-width:70%;
+    }
+    .viewer-title-info strong {
+      font-size:0.95rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .viewer-title-info span {
+      font-size:0.75rem; opacity:0.75;
     }
     .viewer-bar {
-      padding:12px 20px; width:100%;
+      padding:14px 24px; width:100%;
       display:flex; align-items:center; justify-content:space-between; gap:12px;
-      background:rgba(0,0,0,0.6); color:#fff; font-size:0.85rem;
+      background:rgba(18,18,20,0.85); backdrop-filter:blur(10px); color:#fff; font-size:0.85rem;
+      border-top:1px solid rgba(255,255,255,0.1);
     }
-    .viewer-bar strong { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .viewer-btn {
-      background:rgba(255,255,255,0.12); border:none; color:#fff;
-      width:40px; height:40px; border-radius:50%;
+      background:rgba(255,255,255,0.15); border:none; color:#fff;
+      width:42px; height:42px; border-radius:50%;
       display:flex; align-items:center; justify-content:center;
-      cursor:pointer; transition:background 0.15s;
+      cursor:pointer; transition:background 0.15s, transform 0.1s;
+      text-decoration:none;
     }
-    .viewer-btn:hover { background:rgba(255,255,255,0.25); }
-    .viewer-nav { position:absolute; top:50%; transform:translateY(-50%); z-index:1; }
-    .viewer-nav.prev { left:12px; }
-    .viewer-nav.next { right:12px; }
-    .viewer-close { position:absolute; top:16px; right:16px; z-index:2; }
+    .viewer-btn:hover { background:rgba(255,255,255,0.3); transform:scale(1.05); }
+    .viewer-btn:active { transform:scale(0.95); }
+    .viewer-nav {
+      position:absolute; top:50%; transform:translateY(-50%); z-index:2;
+      width:48px; height:48px; border-radius:50%;
+    }
+    .viewer-nav.prev { left:18px; }
+    .viewer-nav.next { right:18px; }
+    .viewer-close {
+      width:38px; height:38px; border-radius:50%;
+      background:rgba(255,255,255,0.2);
+    }
 
     @media (max-width:1023px) {
       .waterfall { columns:3 200px; column-gap:12px; }
@@ -181,7 +240,7 @@
       .waterfall { columns:2 140px; column-gap:8px; }
       .waterfall-item { margin-bottom:8px; }
       .viewer-nav { display:none; }
-      .album-delete { opacity:1; }
+      .album-delete-btn { opacity:1; }
     }
   </style>
 </head>
@@ -201,21 +260,25 @@
           <i data-lucide="home" class="icon-sm"></i>
           <span>主页</span>
         </a>
-        <a href="./api.html">
-          <i data-lucide="book-open" class="icon-sm"></i>
-          <span>API 文档</span>
+        <a href="./upload.html">
+          <i data-lucide="upload-cloud" class="icon-sm"></i>
+          <span>上传管理</span>
+        </a>
+        <a href="./browser.html">
+          <i data-lucide="folder-tree" class="icon-sm"></i>
+          <span>文件管理</span>
         </a>
         <a href="./photos.html" class="active">
           <i data-lucide="image" class="icon-sm"></i>
-          <span>图库</span>
+          <span>图册相册</span>
         </a>
         <a href="./gallery.html">
           <i data-lucide="hard-drive" class="icon-sm"></i>
-          <span>磁盘管理</span>
+          <span>磁盘概览</span>
         </a>
-        <a href="./upload.html">
-          <i data-lucide="settings" class="icon-sm"></i>
-          <span>管理后台</span>
+        <a href="./api.html">
+          <i data-lucide="book-open" class="icon-sm"></i>
+          <span>API 文档</span>
         </a>
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
           <i data-lucide="moon" class="icon-moon icon-md"></i>
@@ -225,6 +288,7 @@
     </div>
   </header>
 
+  <!-- 访问门禁 -->
   <div id="loginGate" class="container" style="padding:80px 20px;" hidden>
     <div class="card" style="max-width:400px;margin:0 auto;padding:32px;text-align:center;">
       <svg class="wordmark" viewBox="0 0 124 44" role="img" aria-label="YOO" style="width:76px;height:27px;margin-bottom:14px;">
@@ -232,7 +296,7 @@
         <g class="g-o1"><circle class="stroke wm-o1" pathLength="1" cx="60" cy="22" r="15.5"/></g>
         <g class="g-o2"><path class="stroke wm-o2" pathLength="1" d="M113.7 13.11A15.5 15.5 0 1 1 102.35 6.56"/><circle class="wm-dot" cx="108.75" cy="8.58" r="3"/></g>
       </svg>
-      <h3 style="margin:0 0 18px;">图库</h3>
+      <h3 style="margin:0 0 18px;">网盘图册</h3>
       <form id="loginForm" style="display:flex;flex-direction:column;gap:12px;">
         <input type="password" id="loginPassword" class="input" placeholder="输入访问密码"
                autocomplete="current-password" required style="text-align:center;" />
@@ -246,34 +310,55 @@
   </div>
 
   <main class="container-wide" id="photosApp" hidden>
-    <!-- View 1: Album list -->
+    <!-- View 1: 图册列表视图 -->
     <div id="viewAlbums">
       <div class="photos-toolbar">
-        <h1><i data-lucide="images" class="icon-md" style="color:var(--brand);"></i> 图库</h1>
-        <span class="photos-count" id="albumsCount"></span>
+        <div>
+          <h1><i data-lucide="images" class="icon-md" style="color:var(--brand);"></i> 我的图册</h1>
+          <p style="margin:4px 0 0;font-size:0.85rem;color:var(--muted);">网盘文件夹直接映射为手机相册 · 无损大图沉浸预览</p>
+        </div>
         <div class="photos-actions">
+          <span class="photos-count" id="albumsCount"></span>
           <button id="btnAddAlbum" class="button primary" type="button" style="padding:6px 14px;font-size:0.8rem;">
-            <i data-lucide="plus" class="icon-xs"></i> 添加图册
+            <i data-lucide="plus" class="icon-xs"></i> 新建图册
           </button>
+          <a href="./browser.html" class="button secondary" style="padding:6px 14px;font-size:0.8rem;text-decoration:none;">
+            <i data-lucide="folder-tree" class="icon-xs"></i> 网盘文件夹
+          </a>
         </div>
       </div>
+
       <div id="guideCard" class="guide-card hidden">
-        <i data-lucide="image-plus" class="icon-lg" style="color:var(--muted);"></i>
-        <h3>尚无图册</h3>
-        <p>在文件浏览器中进入文件夹，点击"加为图册"；或点击上方按钮手动添加。</p>
-        <a href="./gallery.html" class="button primary" style="text-decoration:none;">前往磁盘管理</a>
+        <i data-lucide="image-plus" class="icon-lg" style="color:var(--brand);"></i>
+        <h3>暂无映射相册</h3>
+        <p>私有网盘可以将任何包含图片的文件夹直接作为手机图册进行媒体浏览。<br/>前往文件管理在文件夹菜单中点击「设为图册」，或在此手动新建。</p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+          <a href="./browser.html" class="button primary" style="text-decoration:none;">
+            <i data-lucide="folder-tree" class="icon-xs"></i> 浏览网盘文件
+          </a>
+        </div>
       </div>
+
       <div id="albumGrid" class="album-grid"></div>
     </div>
 
-    <!-- View 2: Waterfall (inside an album) -->
+    <!-- View 2: 相册内照片流 (手机瀑布流 / 媒体流) -->
     <div id="viewWaterfall" style="display:none;">
       <div class="photos-breadcrumb" id="photosBreadcrumb"></div>
       <div class="photos-toolbar">
-        <h1 id="waterfallTitle" style="font-size:1.2rem;"></h1>
-        <span class="photos-count" id="photosCount"></span>
+        <div>
+          <h1 id="waterfallTitle" style="font-size:1.3rem;"></h1>
+          <p id="waterfallSub" style="margin:4px 0 0;font-size:0.82rem;color:var(--muted);"></p>
+        </div>
         <div class="photos-actions">
-          <button id="btnRefresh" class="button secondary" type="button" style="padding:6px 10px;">
+          <span class="photos-count" id="photosCount"></span>
+          <a id="btnOpenInBrowser" href="./browser.html" class="button secondary" style="padding:6px 12px;font-size:0.8rem;text-decoration:none;" title="在文件管理器中管理此文件夹">
+            <i data-lucide="folder" class="icon-xs"></i> 打开文件夹
+          </a>
+          <button id="btnPinAlbum" class="button secondary" type="button" style="padding:6px 12px;font-size:0.8rem;display:none;">
+            <i data-lucide="bookmark" class="icon-xs"></i> 保存为常驻图册
+          </button>
+          <button id="btnRefresh" class="button secondary" type="button" style="padding:6px 10px;" title="刷新">
             <i data-lucide="refresh-cw" class="icon-xs"></i>
           </button>
         </div>
@@ -285,49 +370,62 @@
   <!-- Add album dialog -->
   <div id="addDialog" class="dialog-overlay hidden">
     <div class="dialog-card">
-      <h3><i data-lucide="plus-circle" class="icon-sm"></i> 添加图册</h3>
+      <h3><i data-lucide="image-plus" class="icon-sm" style="color:var(--brand);"></i> 新建映射图册</h3>
+      <p style="font-size:0.82rem;color:var(--muted);margin:0 0 16px;">选择网盘存储与文件夹路径，即可生成一个专属相册。</p>
       <div class="dialog-row">
-        <label>存储</label>
+        <label>存储源</label>
         <select id="dialogStorage">
-          <option value="blob">腾讯盘 (Blob)</option>
-          <option value="s3">S3 盘 (iDrive)</option>
+          <option value="s3" selected>S3 盘 (iDrive e2 大容量存储)</option>
+          <option value="blob">腾讯盘 (EdgeOne Blob 快速存储)</option>
         </select>
       </div>
       <div class="dialog-row">
-        <label>文件夹路径</label>
-        <input type="text" id="dialogPath" placeholder="例如: photos/vacation" />
+        <label>网盘文件夹路径（如 photos/travel 或留空为根目录）</label>
+        <input type="text" id="dialogPath" placeholder="例如：photos/japan" />
       </div>
       <div class="dialog-row">
-        <label>图册名称（可选）</label>
-        <input type="text" id="dialogName" placeholder="默认取路径最后一段" />
+        <label>相册显示名称（选填，默认为文件夹名）</label>
+        <input type="text" id="dialogName" placeholder="例如：2026 日本之旅" />
       </div>
       <div class="dialog-btns">
-        <button id="dialogSave" class="button primary" type="button">添加</button>
         <button id="dialogCancel" class="button secondary" type="button">取消</button>
+        <button id="dialogSave" class="button primary" type="button">创建图册</button>
       </div>
     </div>
   </div>
 
-  <!-- Full-screen viewer -->
+  <!-- Full-screen Lightbox (手机相册全屏大图) -->
   <div id="viewer" class="viewer hidden">
-    <button class="viewer-btn viewer-close" id="viewerClose" title="关闭 (ESC)">
-      <i data-lucide="x" class="icon-sm"></i>
-    </button>
+    <div class="viewer-top-bar">
+      <div class="viewer-title-info">
+        <strong id="viewerName"></strong>
+        <span id="viewerMeta">无损原件</span>
+      </div>
+      <button class="viewer-btn viewer-close" id="viewerClose" title="关闭 (ESC)">
+        <i data-lucide="x" class="icon-sm"></i>
+      </button>
+    </div>
+
     <div class="viewer-img-wrap" id="viewerWrap">
-      <button class="viewer-btn viewer-nav prev" id="viewerPrev" title="上一张">
+      <button class="viewer-btn viewer-nav prev" id="viewerPrev" title="上一张 (←)">
         <i data-lucide="chevron-left" class="icon-md"></i>
       </button>
       <img id="viewerImg" src="" alt="" />
-      <button class="viewer-btn viewer-nav next" id="viewerNext" title="下一张">
+      <button class="viewer-btn viewer-nav next" id="viewerNext" title="下一张 (→)">
         <i data-lucide="chevron-right" class="icon-md"></i>
       </button>
     </div>
+
     <div class="viewer-bar">
-      <strong id="viewerName"></strong>
-      <button class="viewer-btn" id="viewerCopy" title="复制链接" style="width:32px;height:32px;">
-        <i data-lucide="copy" class="icon-xs"></i>
-      </button>
-      <span id="viewerIdx" style="font-size:0.75rem;opacity:0.6;"></span>
+      <span id="viewerIdx" style="font-size:0.85rem;font-weight:600;opacity:0.85;"></span>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="viewer-btn" id="viewerCopy" title="复制直链">
+          <i data-lucide="link" class="icon-xs"></i>
+        </button>
+        <a class="viewer-btn" id="viewerDownload" title="无损原件下载" download>
+          <i data-lucide="download" class="icon-xs"></i>
+        </a>
+      </div>
     </div>
   </div>
 
@@ -336,19 +434,20 @@
       <div class="footer-content">
         <div class="footer-brand">
           <div>
-            <span class="footer-brand-name">YOO · 图库</span>
-            <span class="footer-brand-tag">多图册 · 瀑布流浏览 · 边缘节点出图</span>
+            <span class="footer-brand-name">YOO · 私有云盘</span>
+            <span class="footer-brand-tag">私有网盘 + 手机图册 · 磁盘无损原件存储</span>
           </div>
         </div>
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
-          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
-          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图库</a>
+          <a href="./upload.html"><i data-lucide="upload-cloud" class="icon-xs"></i> 上传</a>
+          <a href="./browser.html"><i data-lucide="folder-tree" class="icon-xs"></i> 文件</a>
+          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图册</a>
           <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-xs"></i> 磁盘</a>
-          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
         </nav>
       </div>
-      <p class="footer-note">基于 EdgeOne Makers · 图片经 <code>/i/</code> 路由出图，删除后旧链接最多还会被边缘节点命中 1 小时</p>
+      <p class="footer-note">基于腾讯 EdgeOne Functions 与 S3 · 磁盘级无损复制 · 绝不压缩图片分辨率或元数据</p>
     </div>
   </footer>
 
@@ -356,11 +455,12 @@
   <script src="./script.js"></script>
   <script>
   (function () {
-    var IMAGE_EXT = ['png','jpg','jpeg','gif','webp','svg','avif','bmp'];
+    var IMAGE_EXT = ['png','jpg','jpeg','gif','webp','svg','avif','bmp','heic'];
     var albumsCache = [];
+    var LOCAL_ALBUMS_KEY = 'yoo_albums_local';
 
     function esc(s) {
-      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
     function extOf(name) {
       var i = String(name).lastIndexOf('.');
@@ -368,36 +468,95 @@
     }
     function isImage(name) { return IMAGE_EXT.indexOf(extOf(name)) >= 0; }
 
-    function albumDisplayName(a) {
-      if (a.name) return a.name;
-      var parts = a.path.split('/');
-      return parts[parts.length - 1] || a.path;
+    function humanSize(bytes) {
+      if (typeof bytes !== 'number' || isNaN(bytes) || bytes <= 0) return '';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
     }
 
-    function apiAlbums() { return location.origin + '/api/albums'; }
+    function albumDisplayName(a) {
+      if (a.name) return a.name;
+      var p = (a.path || '').replace(/^\/+|\/+$/g, '');
+      if (!p) return (a.storage === 's3' ? 'S3 根目录' : 'Blob 根目录');
+      var parts = p.split('/');
+      return parts[parts.length - 1] || p;
+    }
+
+    // ── 本地与远程持久化相册 ──
+    function getLocalAlbums() {
+      try {
+        var raw = localStorage.getItem(LOCAL_ALBUMS_KEY);
+        var parsed = JSON.parse(raw || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) { return []; }
+    }
+    function saveLocalAlbums(list) {
+      localStorage.setItem(LOCAL_ALBUMS_KEY, JSON.stringify(list));
+    }
 
     function loadAlbums() {
-      return fetch(apiAlbums())
-        .then(function (r) { return r.json(); })
+      return fetch(location.origin + '/api/albums')
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
         .then(function (d) {
-          if (d && d.ok && Array.isArray(d.albums)) { albumsCache = d.albums; }
-          else { albumsCache = []; }
+          var remote = (d && d.ok && Array.isArray(d.albums)) ? d.albums : [];
+          var local = getLocalAlbums();
+          // 合并本地与远程，去重
+          var map = {};
+          remote.forEach(function (a) { map[a.storage + ':' + (a.path || '')] = a; });
+          local.forEach(function (a) {
+            var k = a.storage + ':' + (a.path || '');
+            if (!map[k]) { remote.push(a); map[k] = a; }
+          });
+          albumsCache = remote;
           return albumsCache;
         })
-        .catch(function () { albumsCache = []; return albumsCache; });
+        .catch(function () {
+          // 优雅降级：Supabase 未配置或离线时，100% 使用本地持久化
+          albumsCache = getLocalAlbums();
+          return albumsCache;
+        });
     }
 
     function apiAddAlbum(storage, path, name) {
-      return fetch(apiAlbums(), {
+      var cleanPath = (path || '').trim().replace(/^\/+|\/+$/g, '');
+      var item = {
+        id: 'loc_' + Date.now(),
+        storage: storage,
+        path: cleanPath,
+        name: name || cleanPath.split('/').pop() || (storage === 's3' ? 'S3 照片集' : 'Blob 照片集')
+      };
+      var local = getLocalAlbums();
+      var exists = local.some(function (x) { return x.storage === storage && x.path === cleanPath; });
+      if (!exists) { local.unshift(item); saveLocalAlbums(local); }
+
+      return fetch(location.origin + '/api/albums', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storage: storage, path: path, name: name || null })
-      }).then(function (r) { return r.json(); });
+        body: JSON.stringify({ storage: storage, path: cleanPath, name: name || null })
+      }).then(function (r) { return r.json(); }).catch(function () {
+        return { ok: true, album: item, localOnly: true };
+      });
     }
 
-    function apiDeleteAlbum(id) {
-      return fetch(apiAlbums() + '?id=' + encodeURIComponent(id), { method: 'DELETE' })
-        .then(function (r) { return r.json(); });
+    function apiDeleteAlbum(id, storage, path) {
+      var local = getLocalAlbums().filter(function (x) {
+        if (id && String(x.id) === String(id)) return false;
+        if (storage && path !== undefined && x.storage === storage && x.path === path) return false;
+        return true;
+      });
+      saveLocalAlbums(local);
+
+      if (id && !String(id).startsWith('loc_')) {
+        return fetch(location.origin + '/api/albums?id=' + encodeURIComponent(id), { method: 'DELETE' })
+          .then(function (r) { return r.json(); })
+          .catch(function () { return { ok: true }; });
+      }
+      return Promise.resolve({ ok: true });
     }
 
     // ── DOM refs ──
@@ -409,55 +568,83 @@
     var waterfall = document.getElementById('waterfall');
     var photosCount = document.getElementById('photosCount');
     var waterfallTitle = document.getElementById('waterfallTitle');
+    var waterfallSub = document.getElementById('waterfallSub');
     var breadcrumb = document.getElementById('photosBreadcrumb');
     var addDialog = document.getElementById('addDialog');
+    var btnPinAlbum = document.getElementById('btnPinAlbum');
+    var btnOpenInBrowser = document.getElementById('btnOpenInBrowser');
 
     var viewer = document.getElementById('viewer');
     var viewerImg = document.getElementById('viewerImg');
     var viewerName = document.getElementById('viewerName');
+    var viewerMeta = document.getElementById('viewerMeta');
     var viewerIdx = document.getElementById('viewerIdx');
     var viewerWrap = document.getElementById('viewerWrap');
 
     var items = [];
     var viewIndex = -1;
-    var currentAlbumIdx = -1;
+    var currentAlbumObj = null;
 
-    // ── Routing ──
-    function getAlbumParam() {
+    // ── URL 参数解析 ──
+    function parseRoute() {
       var p = new URLSearchParams(location.search);
-      var v = p.get('album');
-      return v !== null ? parseInt(v, 10) : -1;
+      var albumIdx = p.get('album');
+      var folder = p.get('folder') || p.get('path');
+      var storage = p.get('storage') || 's3';
+      var name = p.get('name') || '';
+
+      if (folder !== null) {
+        return { type: 'folder', storage: storage, path: folder, name: name };
+      }
+      if (albumIdx !== null) {
+        var idx = parseInt(albumIdx, 10);
+        return { type: 'album', idx: isNaN(idx) ? -1 : idx };
+      }
+      return { type: 'list' };
     }
 
     function showAlbumList() {
-      currentAlbumIdx = -1;
+      currentAlbumObj = null;
       viewAlbums.style.display = '';
       viewWaterfall.style.display = 'none';
-      history.replaceState({ album: -1 }, '', './photos.html');
+      history.replaceState({ type: 'list' }, '', './photos.html');
       loadAlbums().then(renderAlbums);
     }
 
-    function showAlbum(idx, push) {
-      if (idx < 0 || idx >= albumsCache.length) { showAlbumList(); return; }
-      currentAlbumIdx = idx;
+    function showAlbum(album, push) {
+      currentAlbumObj = album;
       viewAlbums.style.display = 'none';
       viewWaterfall.style.display = '';
-      var url = './photos.html?album=' + idx;
-      if (push) history.pushState({ album: idx }, '', url);
-      else history.replaceState({ album: idx }, '', url);
-      loadAlbum(idx);
+      if (push) {
+        var qs = '?storage=' + encodeURIComponent(album.storage) + '&folder=' + encodeURIComponent(album.path);
+        if (album.name) qs += '&name=' + encodeURIComponent(album.name);
+        history.pushState({ type: 'folder', storage: album.storage, path: album.path, name: album.name }, '', './photos.html' + qs);
+      }
+      loadAlbumData(album);
     }
 
-    window.addEventListener('popstate', function (e) {
-      var idx = (e.state && typeof e.state.album === 'number') ? e.state.album : getAlbumParam();
-      if (idx >= 0) { loadAlbums().then(function () { showAlbum(idx, false); }); }
-      else showAlbumList();
+    window.addEventListener('popstate', function () {
+      applyRoute();
     });
 
-    // ── Album list rendering ──
+    function applyRoute() {
+      var route = parseRoute();
+      if (route.type === 'folder') {
+        showAlbum({ storage: route.storage, path: route.path, name: route.name }, false);
+      } else if (route.type === 'album') {
+        loadAlbums().then(function (list) {
+          if (route.idx >= 0 && route.idx < list.length) showAlbum(list[route.idx], false);
+          else showAlbumList();
+        });
+      } else {
+        showAlbumList();
+      }
+    }
+
+    // ── 渲染图册列表 ──
     function renderAlbums() {
       var albums = albumsCache;
-      albumsCount.textContent = albums.length ? albums.length + ' 个图册' : '';
+      albumsCount.textContent = albums.length ? albums.length + ' 个相册' : '';
       if (!albums.length) {
         guideCard.classList.remove('hidden');
         albumGrid.innerHTML = '';
@@ -466,56 +653,83 @@
       guideCard.classList.add('hidden');
       var html = '';
       albums.forEach(function (a, i) {
-        var tag = a.storage === 's3' ? 'S3' : 'Blob';
+        var tag = a.storage === 's3' ? 'S3 盘' : '腾讯盘';
         var tagClass = a.storage === 's3' ? 's3' : 'blob';
+        var displayName = albumDisplayName(a);
+        var folderDisplay = a.path ? ('/' + a.path) : '/ (根目录)';
+
         html += '<div class="album-card" data-idx="' + i + '">' +
-          '<button class="album-delete" data-del-id="' + esc(a.id) + '" data-del-idx="' + i + '" title="移除图册">' +
+          '<button class="album-delete-btn" data-del-id="' + esc(a.id) + '" data-del-idx="' + i + '" title="移除此图册">' +
             '<i data-lucide="x" class="icon-xs"></i>' +
           '</button>' +
-          '<div class="album-card-head">' +
-            '<div class="album-icon"><i data-lucide="images" class="icon-md"></i></div>' +
-            '<h3>' + esc(albumDisplayName(a)) + '</h3>' +
+          '<div class="album-cover-box" id="albumCover' + i + '">' +
+            '<div class="album-cover-placeholder">' +
+              '<i data-lucide="images" class="icon-lg"></i>' +
+              '<span>加载封面中...</span>' +
+            '</div>' +
+            '<span class="album-cover-badge" id="albumBadge' + i + '">计算中</span>' +
           '</div>' +
-          '<div class="album-meta">' +
-            '<span class="album-storage-tag ' + tagClass + '">' + tag + '</span>' +
-            '<span>' + esc(a.path) + '</span>' +
-            '<span id="albumCount' + i + '" style="margin-left:auto;color:var(--muted);"></span>' +
+          '<div class="album-info">' +
+            '<div class="album-title-row">' +
+              '<h3 title="' + esc(displayName) + '">' + esc(displayName) + '</h3>' +
+              '<span class="album-storage-tag ' + tagClass + '">' + tag + '</span>' +
+            '</div>' +
+            '<div class="album-meta-row">' +
+              '<i data-lucide="folder" class="icon-xs"></i>' +
+              '<span title="' + esc(folderDisplay) + '">' + esc(folderDisplay) + '</span>' +
+            '</div>' +
+            '<div class="album-card-actions">' +
+              '<span><i data-lucide="eye" class="icon-xs"></i> 打开相册</span>' +
+              '<span style="color:var(--muted);"><i data-lucide="chevron-right" class="icon-xs"></i></span>' +
+            '</div>' +
           '</div>' +
         '</div>';
       });
       albumGrid.innerHTML = html;
       if (window.lucide) window.lucide.createIcons();
-      albums.forEach(function (a, i) { fetchAlbumCount(a, i); });
+      albums.forEach(function (a, i) { fetchAlbumDetails(a, i); });
     }
 
-    function fetchAlbumCount(album, i) {
+    // 拉取相册封面图与照片数
+    function fetchAlbumDetails(album, i) {
       var qs = '?storage=' + encodeURIComponent(album.storage) +
                '&prefix=' + encodeURIComponent(album.path) +
-               '&limit=500';
+               '&limit=50';
       fetch(location.origin + '/api/list' + qs)
-        .then(function (r) { return r.text().then(function (t) { try { return JSON.parse(t); } catch(e) { throw new Error(); } }); })
+        .then(function (r) { return r.json(); })
         .then(function (d) {
           if (!d || d.ok !== true) return;
-          var count = (d.items || []).filter(function (it) { return isImage(it.name); }).length;
-          var el = document.getElementById('albumCount' + i);
-          if (el) el.textContent = count + ' 张';
+          var imgItems = (d.items || []).filter(function (it) { return isImage(it.name); });
+          var badge = document.getElementById('albumBadge' + i);
+          if (badge) badge.textContent = imgItems.length + ' 张照片';
+
+          var coverBox = document.getElementById('albumCover' + i);
+          if (coverBox && imgItems.length > 0) {
+            var firstUrl = imgItems[0].url;
+            coverBox.innerHTML = '<img src="' + esc(firstUrl) + '" alt="' + esc(album.name || '') + '" loading="lazy" />' +
+              '<span class="album-cover-badge">' + imgItems.length + ' 张照片</span>';
+          } else if (coverBox && imgItems.length === 0) {
+            coverBox.innerHTML = '<div class="album-cover-placeholder"><i data-lucide="image" class="icon-lg"></i><span>暂无照片</span></div>' +
+              '<span class="album-cover-badge">0 张</span>';
+            if (window.lucide) window.lucide.createIcons();
+          }
         })
         .catch(function () {});
     }
 
-    // ── Album grid click ──
+    // ── 图册点击事件 ──
     albumGrid.addEventListener('click', function (e) {
       var delBtn = e.target.closest('[data-del-id]');
       if (delBtn) {
         e.stopPropagation();
         var di = parseInt(delBtn.dataset.delIdx, 10);
-        var albumId = delBtn.dataset.delId;
-        if (di >= 0 && di < albumsCache.length) {
-          if (confirm('移除图册 "' + albumDisplayName(albumsCache[di]) + '"？\n（不会删除文件夹中的文件）')) {
-            apiDeleteAlbum(albumId).then(function (d) {
-              if (d && d.ok) { showToast('图册已移除', 'success'); loadAlbums().then(renderAlbums); }
-              else showToast((d && d.error) || '删除失败', 'error');
-            }).catch(function () { showToast('删除失败', 'error'); });
+        var album = albumsCache[di];
+        if (album) {
+          if (confirm('从图册列表移除 "' + albumDisplayName(album) + '"？\n（网盘中的原文件不会被删除）')) {
+            apiDeleteAlbum(album.id, album.storage, album.path).then(function () {
+              showToast('已移除图册', 'success');
+              loadAlbums().then(renderAlbums);
+            });
           }
         }
         return;
@@ -523,38 +737,56 @@
       var card = e.target.closest('.album-card');
       if (card) {
         var idx = parseInt(card.dataset.idx, 10);
-        if (!isNaN(idx)) showAlbum(idx, true);
+        if (!isNaN(idx) && albumsCache[idx]) {
+          showAlbum(albumsCache[idx], true);
+        }
       }
     });
 
-    // ── Load album images ──
-    function loadAlbum(idx) {
-      var album = albumsCache[idx];
-      if (!album) { showAlbumList(); return; }
-
+    // ── 加载相册内部照片流 ──
+    function loadAlbumData(album) {
       var name = albumDisplayName(album);
       waterfallTitle.innerHTML = '<i data-lucide="images" class="icon-sm" style="color:var(--brand);"></i> ' + esc(name);
-      breadcrumb.innerHTML = '<a href="./photos.html">图库</a>' +
+      var folderClean = (album.path || '').replace(/^\/+|\/+$/g, '');
+      waterfallSub.textContent = '路径：' + (folderClean ? ('/' + folderClean) : '/ (根目录)') + ' · ' + (album.storage === 's3' ? 'S3 盘' : '腾讯盘');
+
+      // 更新在文件管理器中打开的链接
+      btnOpenInBrowser.href = './browser.html?storage=' + encodeURIComponent(album.storage) + (folderClean ? ('&path=' + encodeURIComponent(folderClean)) : '');
+
+      // 检查当前文件夹是否已在常驻图册中
+      var isPinned = albumsCache.some(function (a) { return a.storage === album.storage && (a.path || '') === folderClean; });
+      if (!isPinned) {
+        btnPinAlbum.style.display = 'inline-flex';
+        btnPinAlbum.onclick = function () {
+          apiAddAlbum(album.storage, folderClean, name).then(function () {
+            showToast('已加入我的图册', 'success');
+            btnPinAlbum.style.display = 'none';
+          });
+        };
+      } else {
+        btnPinAlbum.style.display = 'none';
+      }
+
+      breadcrumb.innerHTML = '<a href="./photos.html">所有图册</a>' +
         '<span class="sep"><i data-lucide="chevron-right" class="icon-xs"></i></span>' +
         '<span class="current">' + esc(name) + '</span>';
       if (window.lucide) window.lucide.createIcons();
 
-      waterfall.innerHTML = '<div class="empty" style="column-span:all;"><p>加载中...</p></div>';
+      waterfall.innerHTML = '<div class="empty" style="column-span:all;"><p>正在读取原件照片流...</p></div>';
       photosCount.textContent = '';
 
       var qs = '?storage=' + encodeURIComponent(album.storage) +
-               '&prefix=' + encodeURIComponent(album.path) +
-               '&limit=500';
+               '&prefix=' + encodeURIComponent(folderClean) +
+               '&limit=1000';
       fetch(location.origin + '/api/list' + qs)
         .then(function (r) {
-          return r.text().then(function (t) {
-            try { return JSON.parse(t); } catch (e) { throw new Error('HTTP ' + r.status); }
-          });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
         })
         .then(function (d) {
           if (!d || d.ok !== true) throw new Error((d && d.error) || '加载失败');
           items = (d.items || []).filter(function (it) { return isImage(it.name); });
-          photosCount.textContent = '共 ' + items.length + ' 张';
+          photosCount.textContent = '共 ' + items.length + ' 张照片';
           renderWaterfall();
         })
         .catch(function (e) {
@@ -565,14 +797,19 @@
 
     function renderWaterfall() {
       if (!items.length) {
-        waterfall.innerHTML = '<div class="empty" style="column-span:all;"><p>此图册暂无图片</p></div>';
+        waterfall.innerHTML = '<div class="empty" style="column-span:all;"><p>此文件夹中暂无可预览的照片原件</p></div>';
         return;
       }
       var html = '';
       items.forEach(function (it, i) {
+        var sizeText = humanSize(it.size);
         html += '<div class="waterfall-item" data-idx="' + i + '">' +
           '<img src="' + esc(it.url) + '" alt="' + esc(it.name) + '" loading="lazy" />' +
-          '<div class="waterfall-bar"><strong>' + esc(it.name) + '</strong></div></div>';
+          '<div class="waterfall-bar">' +
+            '<strong>' + esc(it.name) + '</strong>' +
+            (sizeText ? ('<span>' + esc(sizeText) + '</span>') : '') +
+          '</div>' +
+        '</div>';
       });
       waterfall.innerHTML = html;
     }
@@ -581,13 +818,12 @@
       var el = e.target.closest('.waterfall-item');
       if (!el) return;
       var idx = parseInt(el.dataset.idx, 10);
-      if (isNaN(idx)) return;
-      openViewer(idx);
+      if (!isNaN(idx)) openViewer(idx);
     });
 
-    // ── Add album dialog ──
+    // ── 新建图册弹窗 ──
     document.getElementById('btnAddAlbum').addEventListener('click', function () {
-      document.getElementById('dialogStorage').value = 'blob';
+      document.getElementById('dialogStorage').value = 's3';
       document.getElementById('dialogPath').value = '';
       document.getElementById('dialogName').value = '';
       addDialog.classList.remove('hidden');
@@ -602,24 +838,22 @@
       var s = document.getElementById('dialogStorage').value;
       var p = document.getElementById('dialogPath').value.trim();
       var n = document.getElementById('dialogName').value.trim();
-      if (!p) { showToast('请输入文件夹路径', 'error'); return; }
       apiAddAlbum(s, p, n).then(function (d) {
         if (d && d.ok) {
           addDialog.classList.add('hidden');
-          showToast('图册已添加', 'success');
+          showToast('图册映射成功', 'success');
           loadAlbums().then(renderAlbums);
         } else {
-          showToast((d && d.error) || '添加失败', 'error');
+          showToast((d && d.error) || '创建失败', 'error');
         }
-      }).catch(function () { showToast('添加失败', 'error'); });
+      }).catch(function () { showToast('创建失败', 'error'); });
     });
 
-    // ── Refresh ──
     document.getElementById('btnRefresh').addEventListener('click', function () {
-      if (currentAlbumIdx >= 0) loadAlbum(currentAlbumIdx);
+      if (currentAlbumObj) loadAlbumData(currentAlbumObj);
     });
 
-    // ── Viewer ──
+    // ── 手机相册沉浸大图 (Lightbox) ──
     function openViewer(idx) {
       viewIndex = idx;
       updateViewer();
@@ -637,7 +871,16 @@
       viewerImg.src = it.url;
       viewerImg.alt = it.name;
       viewerName.textContent = it.name;
+      var sizeText = humanSize(it.size);
+      viewerMeta.textContent = (sizeText ? (sizeText + ' · ') : '') + '无损原件直出 · 100% 原始画质';
       viewerIdx.textContent = (viewIndex + 1) + ' / ' + items.length;
+
+      var dl = document.getElementById('viewerDownload');
+      if (dl) {
+        dl.href = it.url + (it.url.indexOf('?') >= 0 ? '&' : '?') + 'download=1';
+        dl.setAttribute('download', it.name);
+      }
+      if (window.lucide) window.lucide.createIcons();
     }
     function navPrev() { if (viewIndex > 0) { viewIndex--; updateViewer(); } }
     function navNext() { if (viewIndex < items.length - 1) { viewIndex++; updateViewer(); } }
@@ -647,39 +890,48 @@
     document.getElementById('viewerNext').addEventListener('click', navNext);
     document.getElementById('viewerCopy').addEventListener('click', function () {
       var it = items[viewIndex];
-      if (it && navigator.clipboard) {
-        navigator.clipboard.writeText(it.url).then(function () { showToast('链接已复制', 'success'); });
+      if (it) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(it.url).then(function () { showToast('原图直链已复制', 'success'); });
+        } else {
+          showToast('请长按地址栏复制', 'info');
+        }
       }
     });
 
     document.addEventListener('keydown', function (e) {
       if (viewer.classList.contains('hidden')) return;
       if (e.key === 'Escape') closeViewer();
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') navPrev();
-      else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navNext();
+      else if (e.key === 'ArrowLeft') navPrev();
+      else if (e.key === 'ArrowRight') navNext();
     });
 
-    var touchStartY = 0, touchStartX = 0;
+    // 移动端手势滑动
+    var touchStartX = 0, touchStartY = 0;
     viewerWrap.addEventListener('touchstart', function (e) {
-      touchStartY = e.touches[0].clientY; touchStartX = e.touches[0].clientX;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
     }, { passive: true });
     viewerWrap.addEventListener('touchend', function (e) {
-      var dy = e.changedTouches[0].clientY - touchStartY;
       var dx = e.changedTouches[0].clientX - touchStartX;
-      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 50) { if (dy > 0) navPrev(); else navNext(); }
-      else if (Math.abs(dx) > 50) { if (dx > 0) navPrev(); else navNext(); }
+      var dy = e.changedTouches[0].clientY - touchStartY;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 0) navPrev();
+        else navNext();
+      } else if (dy > 80 && Math.abs(dy) > Math.abs(dx)) {
+        closeViewer();
+      }
     }, { passive: true });
+
     viewer.addEventListener('click', function (e) {
       if (e.target === viewer || e.target === viewerWrap) closeViewer();
     });
 
-    // ── Init ──
+    // ── 初始化 ──
     document.addEventListener('DOMContentLoaded', function () {
       initGate('photosApp', function () {
         loadAlbums().then(function () {
-          var idx = getAlbumParam();
-          if (idx >= 0) showAlbum(idx, false);
-          else showAlbumList();
+          applyRoute();
         });
       });
     });

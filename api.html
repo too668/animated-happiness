@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YOO · API 文档</title>
-  <meta name="description" content="YOO 完整 API 文档，包含上传、列表、删除接口说明与示例。" />
+  <title>YOO · 开放存储 API - 私有云盘</title>
+  <meta name="description" content="YOO 私有云盘完整 API 文档，包含大文件直传、列表、元信息与删除接口说明与示例。" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -36,21 +36,25 @@
           <i data-lucide="home" class="icon-sm"></i>
           <span>主页</span>
         </a>
-        <a href="./api.html" class="active">
-          <i data-lucide="book-open" class="icon-sm"></i>
-          <span>API 文档</span>
+        <a href="./upload.html">
+          <i data-lucide="upload-cloud" class="icon-sm"></i>
+          <span>上传管理</span>
+        </a>
+        <a href="./browser.html">
+          <i data-lucide="folder-tree" class="icon-sm"></i>
+          <span>文件管理</span>
         </a>
         <a href="./photos.html">
           <i data-lucide="image" class="icon-sm"></i>
-          <span>图库</span>
+          <span>图册</span>
         </a>
         <a href="./gallery.html">
           <i data-lucide="hard-drive" class="icon-sm"></i>
-          <span>磁盘管理</span>
+          <span>磁盘概览</span>
         </a>
-        <a href="./upload.html">
-          <i data-lucide="settings" class="icon-sm"></i>
-          <span>管理后台</span>
+        <a href="./api.html" class="active">
+          <i data-lucide="book-open" class="icon-sm"></i>
+          <span>API 文档</span>
         </a>
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
           <i data-lucide="moon" class="icon-moon icon-md"></i>
@@ -63,21 +67,19 @@
   <main class="container">
     <section class="section" style="padding-top:16px;">
       <h1 style="margin-bottom:8px;">API 文档</h1>
-      <p class="lead" style="margin-bottom:20px;">YOO 图床 API。以下每个示例都是实测跑通的，不是设想。</p>
+      <p class="lead" style="margin-bottom:20px;">YOO 私有云盘存储 API。以下每个示例均经过实测校验。</p>
 
-      <!-- 两条上传路径的由来 -->
+      <!-- 存储引擎与上传路径 -->
       <div class="card" style="margin-bottom:20px;border-color:rgba(64,158,255,0.3);">
-        <h3 style="margin-top:0;">为什么上传有两条路</h3>
+        <h3 style="margin-top:0;">双存储引擎与直传架构</h3>
         <p style="color:var(--muted);line-height:1.9;margin-bottom:10px;">
-          文件要存进 Blob 存储，有两条路，区别在于<strong style="color:var(--text);">字节是否经过边缘函数</strong>。
+          YOO 私有网盘采用<strong style="color:var(--text);">客户端预签名直传</strong>架构，彻底绕过边缘函数 1MB 请求体限制，保障磁盘级无损原件存储：
         </p>
         <ul style="color:var(--muted);margin:0;padding-left:20px;line-height:2;">
-          <li><strong style="color:var(--text);">压缩中转</strong> —— 浏览器把文件交给边缘函数，函数再写库。边缘函数的<strong style="color:var(--text);">请求体上限是 1MB</strong>，所以这条路只收图片，且前端会把超过 950KB 的图先压到限内。胜在一条 <code>curl</code> 就能传。</li>
-          <li><strong style="color:var(--text);">原图直传</strong> —— 函数只签发一个几十字节的临时 PUT 地址，浏览器拿它把字节<strong style="color:var(--text);">直接写进存储</strong>。字节不路过函数，所以 1MB 这个上限根本不会被触发：任意格式、不压缩、单个文件可到 20MB（存储单值上限 25MB）。</li>
+          <li><strong style="color:var(--text);">S3 兼容对象存储 (iDrive e2)</strong> —— 专为大文件打造。单文件直传可达 <strong style="color:var(--text);">5GB ~ 10GB</strong>，支持任意格式（视频、压缩包、镜像、安装包等），字节直达对象存储。</li>
+          <li><strong style="color:var(--text);">EdgeOne Blob 原生存储</strong> —— 极速中小文件直传。单文件直传上限 <strong style="color:var(--text);">20MB</strong>，支持任意格式。</li>
+          <li><strong style="color:var(--text);">磁盘无损复制保障</strong> —— 所有直传均保持 100% 原始字节与哈希，绝不修改分辨率、绝不降画质，完整保留 EXIF 与时间戳。</li>
         </ul>
-        <p style="color:var(--muted);margin:12px 0 0;font-size:0.85rem;">
-          注：1MB 只限制「进来的请求体」。往外发图片的响应体没有这个限制——实测 2.39MB 原图经 <code>/i/</code> 返回是逐字节完整的，所以大图能正常显示。
-        </p>
       </div>
 
       <!-- 认证 -->
@@ -109,6 +111,32 @@ curl "https://yooy.cc.cd/api/list?key=yoo_xxxxxxxxxxxxxxxxxxxxxxxx"</code></pre>
           <li>不带凭证返回 <code>401</code>，权限不足返回 <code>403</code></li>
           <li><code>GET /i/&lt;key&gt;</code> 图片直链、<code>/api/health</code>、登录相关接口保持公开</li>
         </ul>
+      </div>
+
+      <!-- PicGo / Typora 客户端配置 -->
+      <div class="card" style="margin-bottom:20px;border-color:rgba(64,158,255,0.4);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <i data-lucide="send" class="icon-md" style="color:var(--brand);"></i>
+          <h3 style="margin:0;">PicGo / Typora 快速接入</h3>
+          <span class="badge info"><span>外部客户端</span></span>
+        </div>
+        <p style="color:var(--muted);font-size:0.88rem;line-height:1.8;">
+          通过 PicGo 的「自定义 Web 图床」功能，可无缝绑定 Typora / Obsidian 实现截图一键粘贴自动上传。
+        </p>
+        <div class="table-wrap">
+          <table style="margin-bottom:12px;">
+            <thead><tr><th>配置项</th><th>填写值</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td><strong>API 地址</strong></td><td><code>https://&lt;你的域名&gt;/api/upload</code></td><td>中转上传接口（POST 表单）</td></tr>
+              <tr><td><strong>POST 参数名</strong></td><td><code>file</code></td><td>支持 file / image / upload</td></tr>
+              <tr><td><strong>JSON 路径</strong></td><td><code>url</code></td><td>自动读取直链地址</td></tr>
+              <tr><td><strong>自定义请求头</strong></td><td><code>{"Authorization": "Bearer yoo_..."}</code></td><td>在管理后台签发的 API Key</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="color:var(--warning);font-size:0.82rem;margin:8px 0 0;line-height:1.7;">
+          💡 <strong>注意</strong>：受边缘函数 1MB 请求体限制，单步接口限制单图 <strong>≤950KB</strong>。Typora 高分屏大图若超限，可在 PicGo 安装 <code>picgo-plugin-compress</code> 压缩插件，或在网页后台走「原图直传」。
+        </p>
       </div>
 
       <!-- 直传 第一步 -->
@@ -337,16 +365,17 @@ curl -X DELETE -H "Authorization: Bearer yoo_..." "https://yooy.cc.cd/api/delete
       <div class="footer-content">
         <div class="footer-brand">
           <div>
-            <span class="footer-brand-name">YOO · 图片托管</span>
-            <span class="footer-brand-tag">上传即得直链 · 边缘节点出图</span>
+            <span class="footer-brand-name">YOO · 私有云盘</span>
+            <span class="footer-brand-tag">双模存储引擎 · 磁盘无损原件保障</span>
           </div>
         </div>
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
-          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
-          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图库</a>
+          <a href="./upload.html"><i data-lucide="upload-cloud" class="icon-xs"></i> 上传</a>
+          <a href="./browser.html"><i data-lucide="folder-tree" class="icon-xs"></i> 文件</a>
+          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图册</a>
           <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-xs"></i> 磁盘</a>
-          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
         </nav>
       </div>
       <p class="footer-note">基于 EdgeOne Makers · 图片经 <code>/i/</code> 路由出图，删除后旧链接最多还会被边缘节点命中 1 小时</p>

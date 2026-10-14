@@ -144,6 +144,9 @@ async function checkLoginRate(context, request) {
   if (rec.t > now && rec.c >= LOGIN_MAX_FAILS) {
     return { limited: true, retryAfter: Math.ceil((rec.t - now) / 1000), key };
   }
+  if (rec.t <= now && rec.c > 0) {
+    rec = { c: 0, t: 0 };
+  }
   return { limited: false, rec, key };
 }
 
@@ -481,10 +484,21 @@ async function s3ListObjects(context, limit, prefix, delimiter, continuationToke
     }
   }
 
+  const commonPrefixes = [];
+  const prefixRe = /<CommonPrefixes>[\s\S]*?<Prefix>([^<]+)<\/Prefix>[\s\S]*?<\/CommonPrefixes>/g;
+  let pm;
+  while ((pm = prefixRe.exec(xml))) {
+    const raw = decodeXmlEntities(pm[1]).replace(/\/+$/, '');
+    const cleanPath = raw.replace(/^uploads\//, '');
+    const name = cleanPath.split('/').pop();
+    if (name) commonPrefixes.push({ name, path: cleanPath });
+  }
+
   const truncatedM = xml.match(/<IsTruncated>(true|false)<\/IsTruncated>/);
   const nextTokenM = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/);
   return {
     files,
+    commonPrefixes,
     truncated: truncatedM ? truncatedM[1] === 'true' : false,
     nextToken: nextTokenM ? decodeXmlEntities(nextTokenM[1]) : null
   };
@@ -547,6 +561,68 @@ async function s3DeleteObject(context, key) {
     const text = await res.text();
     throw new Error(`S3 delete failed ${res.status}: ${text.slice(0, 200)}`);
   }
+}
+
+// S3 批量删除（DeleteObjects，一次最多 1000 项，大幅减少网络往返）
+async function s3DeleteObjects(context, keys) {
+  if (!keys || !keys.length) return 0;
+  const CHUNK_SIZE = 1000;
+  let deletedCount = 0;
+  const bucket = envVar(context, 'IDRIVE_BUCKET');
+  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
+  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const host = s3Host(context);
+
+  for (let i = 0; i < keys.length; i += CHUNK_SIZE) {
+    const chunk = keys.slice(i, i + CHUNK_SIZE);
+    const xml = '<?xml version="1.0" encoding="UTF-8"?><Delete><Quiet>true</Quiet>' +
+      chunk.map(k => `<Object><Key>${k.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')}</Key></Object>`).join('') +
+      '</Delete>';
+    const payloadBytes = enc.encode(xml);
+    const payloadHash = s3Hex(await crypto.subtle.digest('SHA-256', payloadBytes));
+    const d = new Date();
+    const date = s3Ymd(d);
+    const datetime = s3Ymdhms(d);
+    const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+
+    const qs = 'delete=';
+    const headers = {
+      'content-type': 'application/xml',
+      'host': host,
+      'x-amz-content-sha256': payloadHash,
+      'x-amz-date': datetime
+    };
+
+    const sortedKeys = Object.keys(headers).sort();
+    const signedHeaders = sortedKeys.join(';');
+    const canonicalHeaders = sortedKeys.map(k => `${k}:${headers[k]}`).join('\n') + '\n';
+    const canonical = [
+      'POST', '/', qs,
+      canonicalHeaders, signedHeaders, payloadHash
+    ].join('\n');
+
+    const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
+    const signingKey = await s3SigningKey(secret, date, IDRIVE_REGION);
+    const sig = s3Hex(await s3Hmac(signingKey, toSign));
+    const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
+
+    try {
+      const res = await fetchT(`https://${host}/?delete`, {
+        method: 'POST',
+        headers: { ...headers, Authorization: auth },
+        body: payloadBytes
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      deletedCount += chunk.length;
+    } catch {
+      // 容灾兜底：批量接口失败时退回单条删除
+      for (const k of chunk) {
+        await s3DeleteObject(context, k);
+        deletedCount++;
+      }
+    }
+  }
+  return deletedCount;
 }
 
 async function s3CopyObject(context, srcKey, dstKey) {
@@ -681,17 +757,30 @@ export async function onRequest(context) {
       } catch (e) {
         keysProbe = { ok: false, backend: 'supabase', error: e.message };
       }
+      let s3Probe = {
+        configured: isS3Configured(context),
+        endpoint: IDRIVE_ENDPOINT,
+        region: IDRIVE_REGION,
+        bucket: isS3Configured(context) ? envVar(context, 'IDRIVE_BUCKET') : ''
+      };
+      if (isS3Configured(context)) {
+        try {
+          const s3r = await s3ListObjects(context, 1, '', '');
+          s3Probe.ok = true;
+          s3Probe.accessible = true;
+          s3Probe.sampled = s3r.keys ? s3r.keys.length : 0;
+        } catch (e) {
+          s3Probe.ok = false;
+          s3Probe.accessible = false;
+          s3Probe.error = e.message;
+        }
+      }
       return json({
         ok: true,
         store: STORE_NAME,
         storage: probe,
         keys: keysProbe,
-        s3: {
-          configured: isS3Configured(context),
-          endpoint: IDRIVE_ENDPOINT,
-          region: IDRIVE_REGION,
-          bucket: isS3Configured(context) ? envVar(context, 'IDRIVE_BUCKET') : ''
-        },
+        s3: s3Probe,
         limits: {
           relayMaxBytes: RELAY_MAX_BYTES,
           directMaxBytes: DIRECT_MAX_BYTES,
@@ -822,7 +911,7 @@ export async function onRequest(context) {
           const cursor = url.searchParams.get('cursor') || undefined;
           if (folderMode) {
             const s3Prefix = userPrefix ? `uploads/${userPrefix}/` : 'uploads/';
-            const { files, truncated, nextToken } = await s3ListObjects(context, limit, s3Prefix, '/', cursor);
+            const { files, commonPrefixes, truncated, nextToken } = await s3ListObjects(context, limit, s3Prefix, '/', cursor);
             const items = files.map(f => {
               const name = f.key.split('/').pop();
               return {
@@ -834,11 +923,18 @@ export async function onRequest(context) {
                 storage: 's3'
               };
             });
-            const folders = await dbListFolders(context, 's3', userPrefix);
+            const dbFolders = await dbListFolders(context, 's3', userPrefix);
+            const folderMap = new Map();
+            for (const f of dbFolders) folderMap.set(f.path, f);
+            for (const f of (commonPrefixes || [])) {
+              if (!folderMap.has(f.path)) folderMap.set(f.path, f);
+            }
+            const folders = Array.from(folderMap.values());
             return json({
               ok: true,
               folders,
               items,
+              total: items.length,
               nextCursor: nextToken || null,
               hasMore: truncated && Boolean(nextToken),
               prefix: userPrefix,
@@ -860,6 +956,7 @@ export async function onRequest(context) {
           return json({
             ok: true,
             items,
+            total: items.length,
             nextCursor: nextToken || null,
             hasMore: truncated && Boolean(nextToken),
             storage: 's3'
@@ -885,7 +982,8 @@ export async function onRequest(context) {
             name: key.split('/').pop(),
             url: publicUrl(origin, key),
             type: MIME_BY_EXT[extOf(key)] || 'application/octet-stream',
-            etag: blob.etag || null
+            etag: blob.etag || null,
+            storage: 'blob'
           });
         }
 
@@ -896,6 +994,8 @@ export async function onRequest(context) {
           folders,
           items: directFiles.slice(0, limit),
           total: directFiles.length,
+          nextCursor: result.cursor || null,
+          hasMore: Boolean(result.cursor),
           prefix: userPrefix,
           storage: 'blob'
         });
@@ -916,7 +1016,8 @@ export async function onRequest(context) {
           name,
           url: publicUrl(origin, blob.key),
           type: MIME_BY_EXT[extOf(blob.key)] || 'application/octet-stream',
-          etag: blob.etag || null
+          etag: blob.etag || null,
+          storage: 'blob'
         };
         if (detail) item.detail = true;
         return item;
@@ -976,6 +1077,9 @@ export async function onRequest(context) {
       const size = Number(body.size);
       const rawFolder = String(body.folder || '').trim();
       if (rawFolder && !isValidFolder(rawFolder)) return fail('文件夹路径格式不正确');
+      if (rawFolder) {
+        dbUpsertFolders(context, storage, rawFolder).catch(() => {});
+      }
 
       const contentType =
         typeof body.contentType === 'string' && /^\w+\/[\w.+-]+$/.test(body.contentType)
@@ -1165,9 +1269,8 @@ export async function onRequest(context) {
       // ── S3 删除 ──
       if (storage === 's3') {
         if (!isS3Configured(context)) return fail('S3 存储未配置', 503);
-        const rawKey = url.searchParams.get('key') || url.searchParams.get('url') || '';
-        const key = keyFromAny(rawKey);
-        if (!key) return fail('缺少参数 key');
+        const { key, error } = await readKeyParam(url);
+        if (error) return fail(error);
         try {
           await s3DeleteObject(context, key);
           return json({ ok: true, key, message: '已删除', storage: 's3' });
@@ -1204,10 +1307,8 @@ export async function onRequest(context) {
         try {
           const s3Prefix = `uploads/${folder}/`;
           const files = await s3ListAll(context, s3Prefix, '');
-          for (const f of files) {
-            await s3DeleteObject(context, f.key);
-            deleted++;
-          }
+          const keys = files.map(f => f.key);
+          deleted = await s3DeleteObjects(context, keys);
           await dbDeleteFolders(context, 's3', folder);
           const albumsRemoved = await cascadeDeleteAlbums(context, folder);
           return json({ ok: true, folder, deleted, albumsRemoved, storage: 's3' });
@@ -1229,9 +1330,11 @@ export async function onRequest(context) {
           if (!result.cursor || !page.length) break;
           cursor = result.cursor;
         }
-        for (const key of blobKeys) {
-          await control.delete(key);
-          deleted++;
+        const CONCURRENCY = 10;
+        for (let i = 0; i < blobKeys.length; i += CONCURRENCY) {
+          const chunk = blobKeys.slice(i, i + CONCURRENCY);
+          await Promise.all(chunk.map(k => control.delete(k)));
+          deleted += chunk.length;
         }
         await dbDeleteFolders(context, 'blob', folder);
         const albumsRemoved = await cascadeDeleteAlbums(context, folder);
@@ -1264,11 +1367,15 @@ export async function onRequest(context) {
           const oldPrefix = `uploads/${oldPath}/`;
           const newPrefix = `uploads/${newPath}/`;
           const files = await s3ListAll(context, oldPrefix, '');
-          for (const f of files) {
-            const newKey = newPrefix + f.key.slice(oldPrefix.length);
-            await s3CopyObject(context, f.key, newKey);
-            await s3DeleteObject(context, f.key);
-            moved++;
+          const CONCURRENCY = 5;
+          for (let i = 0; i < files.length; i += CONCURRENCY) {
+            const chunk = files.slice(i, i + CONCURRENCY);
+            await Promise.all(chunk.map(async f => {
+              const newKey = newPrefix + f.key.slice(oldPrefix.length);
+              await s3CopyObject(context, f.key, newKey);
+              await s3DeleteObject(context, f.key);
+            }));
+            moved += chunk.length;
           }
           await dbDeleteFolders(context, 's3', oldPath);
           await dbUpsertFolders(context, 's3', newPath);
@@ -1292,14 +1399,18 @@ export async function onRequest(context) {
           if (!result.cursor || !page.length) break;
           cursor = result.cursor;
         }
-        for (const blob of blobs) {
-          const newKey = newBlobPrefix + blob.key.slice(oldBlobPrefix.length);
-          const data = await control.get(blob.key, { type: 'arrayBuffer' });
-          if (data) {
-            await control.set(newKey, data);
-            await control.delete(blob.key);
-            moved++;
-          }
+        const CONCURRENCY = 5;
+        for (let i = 0; i < blobs.length; i += CONCURRENCY) {
+          const chunk = blobs.slice(i, i + CONCURRENCY);
+          await Promise.all(chunk.map(async blob => {
+            const newKey = newBlobPrefix + blob.key.slice(oldBlobPrefix.length);
+            const data = await control.get(blob.key, { type: 'arrayBuffer' });
+            if (data) {
+              await control.set(newKey, data);
+              await control.delete(blob.key);
+              moved++;
+            }
+          }));
         }
         await dbDeleteFolders(context, 'blob', oldPath);
         await dbUpsertFolders(context, 'blob', newPath);

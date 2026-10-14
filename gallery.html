@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YOO · 磁盘管理</title>
-  <meta name="description" content="YOO 图片托管 - 磁盘管理与文件浏览" />
+  <title>YOO · 存储概览 - 私有云盘</title>
+  <meta name="description" content="YOO 私有云盘存储池概览与容量状态" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -73,21 +73,25 @@
           <i data-lucide="home" class="icon-sm"></i>
           <span>主页</span>
         </a>
-        <a href="./api.html">
-          <i data-lucide="book-open" class="icon-sm"></i>
-          <span>API 文档</span>
+        <a href="./upload.html">
+          <i data-lucide="upload-cloud" class="icon-sm"></i>
+          <span>上传管理</span>
+        </a>
+        <a href="./browser.html">
+          <i data-lucide="folder-tree" class="icon-sm"></i>
+          <span>文件管理</span>
         </a>
         <a href="./photos.html">
           <i data-lucide="image" class="icon-sm"></i>
-          <span>图库</span>
+          <span>图册</span>
         </a>
         <a href="./gallery.html" class="active">
           <i data-lucide="hard-drive" class="icon-sm"></i>
-          <span>磁盘管理</span>
+          <span>磁盘概览</span>
         </a>
-        <a href="./upload.html">
-          <i data-lucide="settings" class="icon-sm"></i>
-          <span>管理后台</span>
+        <a href="./api.html">
+          <i data-lucide="book-open" class="icon-sm"></i>
+          <span>API 文档</span>
         </a>
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
           <i data-lucide="moon" class="icon-moon icon-md"></i>
@@ -161,16 +165,17 @@
       <div class="footer-content">
         <div class="footer-brand">
           <div>
-            <span class="footer-brand-name">YOO · 磁盘管理</span>
-            <span class="footer-brand-tag">腾讯盘 + S3 盘 · 边缘节点出图</span>
+            <span class="footer-brand-name">YOO · 私有云盘</span>
+            <span class="footer-brand-tag">腾讯盘 + S3 盘 · 混合大容量存储</span>
           </div>
         </div>
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
-          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
-          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图库</a>
+          <a href="./upload.html"><i data-lucide="upload-cloud" class="icon-xs"></i> 上传</a>
+          <a href="./browser.html"><i data-lucide="folder-tree" class="icon-xs"></i> 文件</a>
+          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图册</a>
           <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-xs"></i> 磁盘</a>
-          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
         </nav>
       </div>
       <p class="footer-note">基于 EdgeOne Makers · 图片经 <code>/i/</code> 路由出图，删除后旧链接最多还会被边缘节点命中 1 小时</p>
@@ -186,12 +191,21 @@
           fetch(location.origin + '/api/list?limit=500&storage=blob')
             .then(function (r) { return r.json(); })
             .then(function (d) {
-              if (d && d.ok) document.getElementById('blobCount').textContent = d.total;
+              if (d && d.ok) {
+                document.getElementById('blobCount').textContent = typeof d.total === 'number' ? d.total : (d.items || []).length;
+              }
             }).catch(function () {});
           fetch(location.origin + '/api/list?limit=500&storage=s3')
             .then(function (r) { return r.json(); })
             .then(function (d) {
-              if (d && d.ok) document.getElementById('s3Count').textContent = d.total;
+              if (d && d.ok) {
+                document.getElementById('s3Count').textContent = typeof d.total === 'number' ? d.total : (d.items || []).length;
+              } else if (d && d.error && /未配置/.test(d.error)) {
+                var el = document.getElementById('s3Count');
+                el.textContent = '未配置';
+                el.style.fontSize = '0.9rem';
+                el.style.color = 'var(--muted)';
+              }
             }).catch(function () {});
         });
       });

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YOO · 首页</title>
-  <meta name="description" content="YOO 图片托管服务 - 基于 EdgeOne Blob Storage 的轻量级图片上传 API" />
+  <title>YOO · 私有云盘</title>
+  <meta name="description" content="YOO 私有云盘系统 - 基于 EdgeOne Makers + S3 / Blob 的高性能个人私有云盘" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -36,9 +36,13 @@
           <i data-lucide="home" class="icon-sm"></i>
           <span>主页</span>
         </a>
-        <a href="./api.html">
-          <i data-lucide="book-open" class="icon-sm"></i>
-          <span>API 文档</span>
+        <a href="./upload.html">
+          <i data-lucide="upload-cloud" class="icon-sm"></i>
+          <span>上传管理</span>
+        </a>
+        <a href="./browser.html">
+          <i data-lucide="folder-tree" class="icon-sm"></i>
+          <span>文件管理</span>
         </a>
         <a href="./photos.html">
           <i data-lucide="image" class="icon-sm"></i>
@@ -46,11 +50,11 @@
         </a>
         <a href="./gallery.html">
           <i data-lucide="hard-drive" class="icon-sm"></i>
-          <span>磁盘管理</span>
+          <span>磁盘概览</span>
         </a>
-        <a href="./upload.html">
-          <i data-lucide="settings" class="icon-sm"></i>
-          <span>管理后台</span>
+        <a href="./api.html">
+          <i data-lucide="book-open" class="icon-sm"></i>
+          <span>API 文档</span>
         </a>
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
           <i data-lucide="moon" class="icon-moon icon-md"></i>
@@ -69,88 +73,96 @@
             <g class="g-o1"><circle class="stroke wm-o1" pathLength="1" cx="60" cy="22" r="15.5"/></g>
             <g class="g-o2"><path class="stroke wm-o2" pathLength="1" d="M113.7 13.11A15.5 15.5 0 1 1 102.35 6.56"/><circle class="wm-dot" cx="108.75" cy="8.58" r="3"/></g>
           </svg>
-          <span style="font-size:1.05rem;font-weight:600;letter-spacing:0.4em;margin-right:-0.4em;color:var(--text-secondary);">图片托管</span>
+          <span style="font-size:1.05rem;font-weight:600;letter-spacing:0.4em;margin-right:-0.4em;color:var(--text-secondary);">私有云盘</span>
         </h1>
-        <p class="lead" style="margin:0 auto 28px;max-width:520px;">
-          基于 EdgeOne Makers + Blob Storage 构建的轻量级图片托管服务。<br>
-          支持拖拽上传、批量管理、一键复制，返回可直链访问的公开 URL。
+        <p class="lead" style="margin:0 auto 28px;max-width:620px;">
+          基于 EdgeOne Makers + S3 / Blob 构建的高性能私有网盘。<br>
+          支持最大 5GB~10GB 磁盘无损原件直传、多级目录树，支持将网盘文件夹直接映射为手机图册无损预览。
         </p>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-          <a href="./upload.html" class="button primary" style="text-decoration:none;">
-            <i data-lucide="settings" class="icon-sm"></i>
-            进入管理后台
+          <a href="./browser.html" class="button primary" style="text-decoration:none;">
+            <i data-lucide="folder-tree" class="icon-sm"></i>
+            进入文件管理
           </a>
-          <a href="./api.html" class="button secondary" style="text-decoration:none;">
-            <i data-lucide="book-open" class="icon-sm"></i>
-            查看 API 文档
+          <a href="./photos.html" class="button secondary" style="text-decoration:none;">
+            <i data-lucide="image" class="icon-sm"></i>
+            网盘手机图册
+          </a>
+          <a href="./upload.html" class="button secondary" style="text-decoration:none;">
+            <i data-lucide="upload-cloud" class="icon-sm"></i>
+            大文件直传
           </a>
         </div>
       </div>
     </section>
 
     <section class="section">
-      <h2>功能特性</h2>
+      <h2>核心特性</h2>
       <div class="two-col">
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
             <i data-lucide="zap" class="icon-md" style="color:var(--brand);"></i>
-            <h3 style="margin:0;">边缘节点出图</h3>
+            <h3 style="margin:0;">边缘极速分发</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            图片由 EdgeOne 边缘函数吐出，响应缓存 1 小时。实测 2.39MB 原图返回逐字节完整。
+            文件经 EdgeOne 全球边缘节点输出，支持任意格式文件下载、预览与 HTTP 304 缓存协商。
           </p>
         </div>
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-            <i data-lucide="shield-check" class="icon-md" style="color:var(--success);"></i>
-            <h3 style="margin:0;">无需自建存储</h3>
+            <i data-lucide="hard-drive" class="icon-md" style="color:var(--success);"></i>
+            <h3 style="margin:0;">双模存储引擎</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            文件存在 EdgeOne Blob Storage，函数内自动鉴权，不需要配置任何 token。配额为总量 1GB、单文件 25MB。
+            支持 EdgeOne Blob 原生存储与 iDrive e2 S3 外部对象存储，支持单文件最大 5GB，不限格式。
           </p>
         </div>
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-            <i data-lucide="link" class="icon-md" style="color:var(--warning);"></i>
-            <h3 style="margin:0;">链接形态</h3>
+            <i data-lucide="folder-tree" class="icon-md" style="color:var(--warning);"></i>
+            <h3 style="margin:0;">完整文件管理</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            形如 <code>/i/2026/08/&lt;随机&gt;-&lt;原名&gt;.png</code>，保留原始文件名便于辨认。注意它是函数路由而非静态文件，换图必须换链接。
+            内置树状多级目录、右键菜单、文件重命名、批量移动、批量删除、分类相册与媒体灯箱。
           </p>
         </div>
         <div class="card">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-            <i data-lucide="layers" class="icon-md" style="color:#a78bfa;"></i>
-            <h3 style="margin:0;">两条上传路径</h3>
+            <i data-lucide="shield-check" class="icon-md" style="color:#a78bfa;"></i>
+            <h3 style="margin:0;">安全私有隔离</h3>
           </div>
           <p style="color:var(--muted);margin:0;font-size:0.9rem;line-height:1.7;">
-            原图直传（任意格式，≤20MB，字节不经过函数）与压缩中转（仅图片，≤950KB，一条 curl 就能传）。
+            配备管理员密码门禁、防暴力破解限流与细粒度 API Key 鉴权体系，保障私有数据安全。
           </p>
         </div>
       </div>
     </section>
 
     <section class="section" style="border-bottom:none;">
-      <h2>快速开始</h2>
+      <h2>快速使用</h2>
       <div class="card" style="margin-top:12px;">
-        <h3>Step 1：上传图片</h3>
-        <p style="color:var(--muted);margin:0 0 16px;">拖拽文件到管理后台。默认走「原图直传」，任意格式、保留原图；也可切到「压缩中转」，只收图片、超过 950KB 会自动压。</p>
+        <h3>Step 1：上传文件</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">进入上传管理页面或文件浏览器，拖拽任意文件（文档、压缩包、音视频、软件等）直接上传。默认走原文件直传，保留原文件字节，最大支持 5GB。</p>
         <a href="./upload.html" class="button primary" style="text-decoration:none;display:inline-flex;">
-          <i data-lucide="upload" class="icon-sm"></i>
-          去上传
+          <i data-lucide="upload-cloud" class="icon-sm"></i>
+          进入上传
         </a>
       </div>
       <div class="card" style="margin-top:12px;">
-        <h3>Step 2：获取图片链接</h3>
-        <p style="color:var(--muted);margin:0 0 16px;">上传成功后，点「新标签页打开」预览，或点「复制链接」拿到可直接分享的地址。</p>
-        <pre style="margin:0;"><code>https://yooy.cc.cd/i/2026/08/6f20444f3562-demo.png</code></pre>
+        <h3>Step 2：文件管理与分享</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">进入文件管理器，可新建文件夹进行归档，支持一键复制公开直链、Markdown 格式或直接下载原文件。</p>
+        <a href="./browser.html" class="button secondary" style="text-decoration:none;display:inline-flex;">
+          <i data-lucide="folder-tree" class="icon-sm"></i>
+          文件管理器
+        </a>
       </div>
       <div class="card" style="margin-top:12px;">
-        <h3>Step 3：调用 API</h3>
-        <p style="color:var(--muted);margin:0 0 16px;">用 HTTP 接口上传图片，响应里的 <code>url</code> 就是图片链接。完整接口清单见 API 文档页。</p>
-        <pre style="margin:0;"><code>curl -X PUT "https://yooy.cc.cd/api/upload?name=demo.png" \
-  -H "Content-Type: image/png" \
-  --data-binary @demo.png</code></pre>
+        <h3>Step 3：一键转为手机图册</h3>
+        <p style="color:var(--muted);margin:0 0 16px;">在网盘任意图片文件夹点击「在图册中浏览」或「设为图册」，即可秒变类似手机相册的瀑布流媒体库，享受无损全屏沉浸式预览与手势切换。</p>
+        <a href="./photos.html" class="button secondary" style="text-decoration:none;display:inline-flex;">
+          <i data-lucide="image" class="icon-sm"></i>
+          进入相册图册
+        </a>
       </div>
     </section>
   </main>
@@ -160,16 +172,17 @@
       <div class="footer-content">
         <div class="footer-brand">
           <div>
-            <span class="footer-brand-name">YOO · 图片托管</span>
-            <span class="footer-brand-tag">上传即得直链 · 边缘节点出图</span>
+            <span class="footer-brand-name">YOO · 私有云盘</span>
+            <span class="footer-brand-tag">安全私有 · 支持 5GB 大文件 · S3/Blob 混合存储</span>
           </div>
         </div>
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
-          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
+          <a href="./upload.html"><i data-lucide="upload-cloud" class="icon-xs"></i> 上传</a>
+          <a href="./browser.html"><i data-lucide="folder-tree" class="icon-xs"></i> 文件</a>
           <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图库</a>
           <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-xs"></i> 磁盘</a>
-          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
         </nav>
       </div>
       <p class="footer-note">基于 EdgeOne Makers · 图片经 <code>/i/</code> 路由出图，删除后旧链接最多还会被边缘节点命中 1 小时</p>

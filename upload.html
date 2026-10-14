@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YOO · 图片管理</title>
-  <meta name="description" content="YOO 图片管理后台，支持上传、预览、复制链接、批量管理。" />
+  <title>YOO · 上传管理 - 私有云盘</title>
+  <meta name="description" content="YOO 私有云盘上传管理，支持大文件直传、预览、直链复制与删除。" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -208,21 +208,25 @@
           <i data-lucide="home" class="icon-sm"></i>
           <span>主页</span>
         </a>
-        <a href="./api.html">
-          <i data-lucide="book-open" class="icon-sm"></i>
-          <span>API 文档</span>
+        <a href="./upload.html" class="active">
+          <i data-lucide="upload-cloud" class="icon-sm"></i>
+          <span>上传管理</span>
+        </a>
+        <a href="./browser.html">
+          <i data-lucide="folder-tree" class="icon-sm"></i>
+          <span>文件管理</span>
         </a>
         <a href="./photos.html">
           <i data-lucide="image" class="icon-sm"></i>
-          <span>图库</span>
+          <span>图册</span>
         </a>
         <a href="./gallery.html">
           <i data-lucide="hard-drive" class="icon-sm"></i>
-          <span>磁盘管理</span>
+          <span>磁盘概览</span>
         </a>
-        <a href="./upload.html" class="active">
-          <i data-lucide="settings" class="icon-sm"></i>
-          <span>管理后台</span>
+        <a href="./api.html">
+          <i data-lucide="book-open" class="icon-sm"></i>
+          <span>API 文档</span>
         </a>
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
           <i data-lucide="moon" class="icon-moon icon-md"></i>
@@ -290,29 +294,29 @@
     <div class="stats-row" style="margin-bottom:20px;">
       <div class="stat-card">
         <div class="stat-icon" style="background:rgba(64,158,255,0.12);color:var(--brand);">
-          <i data-lucide="image" class="icon-md"></i>
+          <i data-lucide="folder-tree" class="icon-md"></i>
         </div>
         <div>
           <div class="stat-num" id="totalCount">0</div>
-          <div class="stat-label">图片总数</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:rgba(45,212,191,0.12);color:#2dd4bf;">
-          <i data-lucide="hard-drive-upload" class="icon-md"></i>
-        </div>
-        <div>
-          <div class="stat-num">20 MB</div>
-          <div class="stat-label">原图直传上限</div>
+          <div class="stat-label">网盘文件数</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="background:rgba(167,139,250,0.12);color:#a78bfa;">
-          <i data-lucide="zap" class="icon-md"></i>
+          <i data-lucide="cloud" class="icon-md"></i>
         </div>
         <div>
-          <div class="stat-num">950 KB</div>
-          <div class="stat-label">压缩中转上限</div>
+          <div class="stat-num">5 GB ~ 10 GB</div>
+          <div class="stat-label">S3 大文件直传</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(45,212,191,0.12);color:#2dd4bf;">
+          <i data-lucide="database" class="icon-md"></i>
+        </div>
+        <div>
+          <div class="stat-num" id="directLimitNum">20 MB</div>
+          <div class="stat-label">Blob 极速直传</div>
         </div>
       </div>
     </div>
@@ -320,23 +324,21 @@
     <!-- Upload Zone -->
     <section class="card" style="margin-bottom:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-        <h3 style="margin:0;">上传文件</h3>
+        <h3 style="margin:0;">上传到私有网盘</h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <label for="storageSelect" style="font-size:0.75rem;color:var(--muted);white-space:nowrap;">存储：</label>
+          <label for="storageSelect" style="font-size:0.75rem;color:var(--muted);white-space:nowrap;">目标存储：</label>
           <select id="storageSelect" class="storage-select">
-            <option value="blob" selected>腾讯云 Blob</option>
-            <option value="s3">iDrive e2 S3</option>
+            <option value="s3" selected>iDrive e2 S3 (5GB~10GB 大容量)</option>
+            <option value="blob">腾讯云 Blob (20MB 快速存储)</option>
           </select>
-          <label for="uploadMode" style="font-size:0.75rem;color:var(--muted);white-space:nowrap;margin-left:6px;">模式：</label>
-          <select id="uploadMode" class="storage-select">
-            <option value="direct" selected>原图直传</option>
-            <option value="relay">压缩中转</option>
-          </select>
+          <span class="badge success" style="font-size:0.75rem;padding:4px 8px;">
+            <i data-lucide="shield-check" class="icon-xs"></i> 100% 磁盘级无损复制
+          </span>
         </div>
       </div>
 
       <p class="mode-hint" id="modeHint">
-        <strong>腾讯云 Blob</strong>：直传到 Blob 存储，最大 20MB，任意格式。
+        <strong>无损存储保障</strong>：文件经客户端直接写入对象存储，字节级与本地文件逐比特一致，绝不降尺寸、绝不压缩画质，完整保留 EXIF 与元数据。
       </p>
 
       <div class="drop-zone" id="dropZone">
@@ -360,6 +362,19 @@
         刷新列表
       </button>
       <input type="text" id="searchInput" placeholder="搜索图片名称..." class="input" />
+      <div style="display:flex;align-items:center;gap:6px;">
+        <label for="copyFormatSelect" style="font-size:0.75rem;color:var(--muted);white-space:nowrap;">复制格式：</label>
+        <select id="copyFormatSelect" class="storage-select" style="padding:4px 26px 4px 8px;font-size:0.75rem;">
+          <option value="url" selected>URL 链接</option>
+          <option value="markdown">Markdown</option>
+          <option value="html">HTML 代码</option>
+          <option value="bbcode">BBCode</option>
+        </select>
+      </div>
+      <a href="./browser.html" class="button secondary" style="text-decoration:none;padding:6px 12px;font-size:0.8rem;" title="打开多级文件夹与批量管理">
+        <i data-lucide="folder-tree" class="icon-xs"></i>
+        树状文件管理
+      </a>
       <span style="font-size:0.8rem;color:var(--muted);margin-left:auto;" id="countLabel">共 0 张</span>
     </div>
 
@@ -418,16 +433,17 @@
       <div class="footer-content">
         <div class="footer-brand">
           <div>
-            <span class="footer-brand-name">YOO · 图片托管</span>
-            <span class="footer-brand-tag">上传即得直链 · 边缘节点出图</span>
+            <span class="footer-brand-name">YOO · 私有云盘</span>
+            <span class="footer-brand-tag">安全私有 · 支持 5GB 大文件 · S3/Blob 混合存储</span>
           </div>
         </div>
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
-          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
-          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图库</a>
+          <a href="./upload.html"><i data-lucide="upload-cloud" class="icon-xs"></i> 上传</a>
+          <a href="./browser.html"><i data-lucide="folder-tree" class="icon-xs"></i> 文件</a>
+          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图册</a>
           <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-xs"></i> 磁盘</a>
-          <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
+          <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
         </nav>
       </div>
       <p class="footer-note">基于 EdgeOne Makers · 图片经 <code>/i/</code> 路由出图，删除后旧链接最多还会被边缘节点命中 1 小时</p>

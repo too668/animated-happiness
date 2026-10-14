@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YOO · 文件浏览器</title>
-  <meta name="description" content="YOO 图片托管 - 文件浏览器" />
+  <title>YOO · 文件管理器 - 私有云盘</title>
+  <meta name="description" content="YOO 私有云盘文件管理器，支持多级文件夹、重命名、移动、批量操作与下载。" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -268,10 +268,11 @@
       </a>
       <nav class="nav">
         <a href="./index.html"><i data-lucide="home" class="icon-sm"></i><span>主页</span></a>
+        <a href="./upload.html"><i data-lucide="upload-cloud" class="icon-sm"></i><span>上传管理</span></a>
+        <a href="./browser.html" class="active"><i data-lucide="folder-tree" class="icon-sm"></i><span>文件管理</span></a>
+        <a href="./photos.html"><i data-lucide="image" class="icon-sm"></i><span>图册</span></a>
+        <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-sm"></i><span>磁盘概览</span></a>
         <a href="./api.html"><i data-lucide="book-open" class="icon-sm"></i><span>API 文档</span></a>
-        <a href="./photos.html"><i data-lucide="image" class="icon-sm"></i><span>图库</span></a>
-        <a href="./gallery.html" class="active"><i data-lucide="hard-drive" class="icon-sm"></i><span>磁盘管理</span></a>
-        <a href="./upload.html"><i data-lucide="settings" class="icon-sm"></i><span>管理后台</span></a>
         <button id="themeToggle" class="theme-toggle" type="button" aria-label="切换主题">
           <i data-lucide="moon" class="icon-moon icon-md"></i>
           <i data-lucide="sun" class="icon-sun icon-md"></i>
@@ -307,6 +308,12 @@
       <span id="storageTag" class="storage-tag blob">Blob</span>
       <div class="breadcrumb" id="breadcrumb"></div>
       <div class="browser-actions">
+        <button id="btnViewAsAlbum" class="button secondary" type="button" style="padding:6px 12px;font-size:0.8rem;" title="以手机图册模式浏览当前文件夹">
+          <i data-lucide="image" class="icon-xs"></i> 图册模式
+        </button>
+        <button id="btnAddAsAlbum" class="button secondary" type="button" style="padding:6px 12px;font-size:0.8rem;" title="将当前文件夹设为常驻图册">
+          <i data-lucide="image-plus" class="icon-xs"></i> 设为图册
+        </button>
         <button id="btnUpload" class="button primary" type="button" style="padding:6px 14px;font-size:0.8rem;">
           <i data-lucide="upload" class="icon-xs"></i> 上传
         </button>
@@ -374,6 +381,9 @@
     </div>
     <div class="viewer-bar">
       <strong id="viewerName"></strong>
+      <a class="viewer-btn" id="viewerDownload" title="下载原图" download style="width:32px;height:32px;text-decoration:none;">
+        <i data-lucide="download" class="icon-xs"></i>
+      </a>
       <button class="viewer-btn" id="viewerCopy" title="复制链接" style="width:32px;height:32px;">
         <i data-lucide="copy" class="icon-xs"></i>
       </button>
@@ -393,7 +403,7 @@
         <nav class="footer-links">
           <a href="./index.html"><i data-lucide="home" class="icon-xs"></i> 主页</a>
           <a href="./api.html"><i data-lucide="book-open" class="icon-xs"></i> API</a>
-          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图库</a>
+          <a href="./photos.html"><i data-lucide="image" class="icon-xs"></i> 图册</a>
           <a href="./gallery.html"><i data-lucide="hard-drive" class="icon-xs"></i> 磁盘</a>
           <a href="./upload.html"><i data-lucide="settings" class="icon-xs"></i> 管理</a>
         </nav>
@@ -523,6 +533,8 @@
           '<div class="folder-thumb"><i data-lucide="folder" class="icon-lg"></i></div>' +
           '<div class="grid-item-bar"><strong title="' + esc(f.name) + '">' + esc(f.name) + '</strong>' +
           '<div class="item-actions">' +
+            '<button class="item-btn" data-a="view-album-folder" data-idx="' + i + '" title="在图册中浏览"><i data-lucide="image" class="icon-xs"></i></button>' +
+            '<button class="item-btn" data-a="add-album" data-idx="' + i + '" title="设为图册"><i data-lucide="image-plus" class="icon-xs"></i></button>' +
             '<button class="item-btn" data-a="rename-folder" data-idx="' + i + '" title="重命名"><i data-lucide="pencil" class="icon-xs"></i></button>' +
             '<button class="item-btn danger" data-a="delete-folder" data-idx="' + i + '" title="删除"><i data-lucide="trash-2" class="icon-xs"></i></button>' +
           '</div></div></div>';
@@ -590,7 +602,7 @@
     document.getElementById('selDelete').addEventListener('click', function () {
       var n = selTotal();
       if (!n) return;
-      if (!confirm('确认删除选中的 ' + n + ' 项？')) return;
+      if (!confirm('确认删除选中的 ' + n + ' 项？\n注意：原件将从存储中彻底删除；由于边缘节点存在缓存，旧链接在最长 1 小时内可能仍可被访问，之后返回 404。')) return;
       var promises = [];
       Object.keys(selFiles).forEach(function (idx) {
         var item = state.items[idx];
@@ -619,12 +631,17 @@
       var hint = state.path || '(根目录)';
       var target = prompt('输入目标文件夹路径（当前：' + hint + '）：', state.path);
       if (target === null) return;
-      target = target.trim();
+      var targetClean = target.trim().replace(/^\/+|\/+$/g, '');
       var promises = [];
       Object.keys(selFiles).forEach(function (idx) {
         var item = state.items[idx];
         if (!item) return;
-        var newKey = target ? target + '/' + item.name : item.name;
+        var newKey;
+        if (state.storage === 's3') {
+          newKey = targetClean ? 'uploads/' + targetClean + '/' + item.name : 'uploads/' + item.name;
+        } else {
+          newKey = targetClean ? targetClean + '/' + item.name : item.name;
+        }
         promises.push(fetch(location.origin + '/api/rename?storage=' + state.storage, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ oldKey: item.key, newKey: newKey })
@@ -672,7 +689,9 @@
       if (!item) return [];
       return [
         { label: '打开', icon: isImage(item.name) ? 'eye' : 'external-link', action: 'open-file' },
-        { label: '复制链接', icon: 'link', action: 'copy-link' },
+        { label: '复制链接 (URL)', icon: 'link', action: 'copy-link' },
+        { label: '复制 Markdown', icon: 'file-text', action: 'copy-markdown' },
+        { label: '复制 HTML 代码', icon: 'code', action: 'copy-html' },
         { sep: true },
         { label: '复制副本', icon: 'copy', action: 'duplicate' },
         { label: '移动到…', icon: 'corner-down-right', action: 'move' },
@@ -685,8 +704,9 @@
       var folder = state.folders[idx];
       if (!folder) return [];
       return [
-        { label: '打开', icon: 'folder-open', action: 'open-folder' },
-        { label: '加为图册', icon: 'image-plus', action: 'add-album' },
+        { label: '打开文件夹', icon: 'folder-open', action: 'open-folder' },
+        { label: '以图册模式浏览', icon: 'image', action: 'view-album-folder' },
+        { label: '设为常驻图册', icon: 'image-plus', action: 'add-album' },
         { sep: true },
         { label: '重命名', icon: 'pencil', action: 'rename-folder' },
         { label: '复制路径', icon: 'copy', action: 'copy-path' },
@@ -696,6 +716,7 @@
     }
     function bgMenuItems() {
       var items = [
+        { label: '以图册模式浏览当前文件夹', icon: 'image', action: 'view-album-bg' },
         { label: '上传文件', icon: 'upload', action: 'upload' },
         { label: '新建文件夹', icon: 'folder-plus', action: 'mkdir' },
         { sep: true },
@@ -703,7 +724,7 @@
       ];
       if (state.path) {
         items.push({ sep: true });
-        items.push({ label: '加为图册', icon: 'image-plus', action: 'add-album-bg' });
+        items.push({ label: '将当前文件夹设为常驻图册', icon: 'image-plus', action: 'add-album-bg' });
       }
       return items;
     }
@@ -716,7 +737,9 @@
           if (it && isImage(it.name)) openViewer(idx);
           else if (it) copyLink(it);
           break;
-        case 'copy-link': copyLink(state.items[idx]); break;
+        case 'copy-link': copyLink(state.items[idx], 'url'); break;
+        case 'copy-markdown': copyLink(state.items[idx], 'markdown'); break;
+        case 'copy-html': copyLink(state.items[idx], 'html'); break;
         case 'duplicate': duplicateFile(idx); break;
         case 'move': moveFile(idx); break;
         case 'rename': renameFile(idx); break;
@@ -724,6 +747,19 @@
         case 'open-folder':
           var f = state.folders[idx];
           if (f) { state.path = f.path; updateUrl(true); load(); }
+          break;
+        case 'view-album-folder':
+          var vfo = state.folders[idx];
+          if (vfo) {
+            location.href = './photos.html?storage=' + encodeURIComponent(state.storage) +
+              '&folder=' + encodeURIComponent(vfo.path) +
+              '&name=' + encodeURIComponent(vfo.name);
+          }
+          break;
+        case 'view-album-bg':
+          location.href = './photos.html?storage=' + encodeURIComponent(state.storage) +
+            '&folder=' + encodeURIComponent(state.path || '') +
+            '&name=' + encodeURIComponent(state.path ? state.path.split('/').pop() : storageLabel());
           break;
         case 'add-album': addAlbum(state.folders[idx]); break;
         case 'rename-folder': renameFolder(idx); break;
@@ -824,16 +860,54 @@
     });
 
     // ── File operations ──
-    function copyLink(item) {
-      if (item && navigator.clipboard) {
-        navigator.clipboard.writeText(item.url).then(function () { showToast('链接已复制', 'success'); });
+    function fallbackCopy(text, msg) {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '0';
+        ta.style.left = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) { showToast(msg || '已复制', 'success'); return; }
+      } catch (e) {}
+      showToast('复制失败，请手动选择', 'error');
+    }
+
+    function copyLink(item, fmt) {
+      if (!item) return;
+      var format = fmt || localStorage.getItem('yoo_copy_format') || 'url';
+      var text = item.url;
+      var label = '链接';
+      if (format === 'markdown') {
+        text = '![' + (item.name || 'image') + '](' + item.url + ')';
+        label = 'Markdown 格式';
+      } else if (format === 'html') {
+        text = '<img src="' + item.url + '" alt="' + (item.name || 'image') + '" />';
+        label = 'HTML 格式';
+      } else if (format === 'bbcode') {
+        text = '[img]' + item.url + '[/img]';
+        label = 'BBCode 格式';
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          showToast(label + '已复制', 'success');
+        }).catch(function () {
+          fallbackCopy(text, label + '已复制');
+        });
+      } else {
+        fallbackCopy(text, label + '已复制');
       }
     }
 
     function deleteFile(idx) {
       var item = state.items[idx];
       if (!item) return;
-      if (!confirm('确认删除 "' + item.name + '"？')) return;
+      if (!confirm('确认删除 "' + item.name + '"？\n注意：原件将从存储中彻底删除；由于边缘节点存在缓存，旧链接在最长 1 小时内可能仍可被访问，之后返回 404。')) return;
       fetch(location.origin + '/api/delete?key=' + encodeURIComponent(item.key) + '&storage=' + state.storage, { method: 'DELETE' })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -846,8 +920,13 @@
     function renameFile(idx) {
       var item = state.items[idx];
       if (!item) return;
-      var newName = prompt('输入新文件名：', item.name);
+      var newName = prompt('输入新文件名（仅允许英文字母、数字、点、横杠和下划线）：', item.name);
       if (!newName || newName === item.name) return;
+      newName = newName.trim();
+      if (!/^[a-zA-Z0-9._-]+$/.test(newName)) {
+        showToast('文件名格式不正确（仅允许字母、数字、.、-、_）', 'error');
+        return;
+      }
       var pathParts = item.key.split('/');
       pathParts[pathParts.length - 1] = newName;
       var newKey = pathParts.join('/');
@@ -869,7 +948,7 @@
       var dotIdx = item.name.lastIndexOf('.');
       var base = dotIdx > 0 ? item.name.slice(0, dotIdx) : item.name;
       var ext = dotIdx > 0 ? item.name.slice(dotIdx) : '';
-      var newName = base + ' - 副本' + ext;
+      var newName = base + '-copy' + ext;
       var pathParts = item.key.split('/');
       pathParts[pathParts.length - 1] = newName;
       var dstKey = pathParts.join('/');
@@ -891,8 +970,13 @@
       var hint = state.path || '(根目录)';
       var target = prompt('输入目标文件夹路径（当前：' + hint + '）：', state.path);
       if (target === null) return;
-      target = target.trim();
-      var newKey = target ? target + '/' + item.name : item.name;
+      var targetClean = target.trim().replace(/^\/+|\/+$/g, '');
+      var newKey;
+      if (state.storage === 's3') {
+        newKey = targetClean ? 'uploads/' + targetClean + '/' + item.name : 'uploads/' + item.name;
+      } else {
+        newKey = targetClean ? targetClean + '/' + item.name : item.name;
+      }
       if (newKey === item.key) { showToast('目标位置相同', 'info'); return; }
       fetch(location.origin + '/api/rename?storage=' + state.storage, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -942,35 +1026,68 @@
         .catch(function (e) { showToast('删除失败：' + e.message, 'error'); });
     }
 
+    function saveLocalAlbum(storage, path, name) {
+      try {
+        var raw = localStorage.getItem('yoo_albums_local') || '[]';
+        var list = JSON.parse(raw);
+        if (!Array.isArray(list)) list = [];
+        var cleanPath = (path || '').trim().replace(/^\/+|\/+$/g, '');
+        var exists = list.some(function (a) { return a.storage === storage && (a.path || '') === cleanPath; });
+        if (!exists) {
+          list.push({ id: 'loc_' + Date.now(), storage: storage, path: cleanPath, name: name || cleanPath.split('/').pop() || (storage === 's3' ? 'S3 照片集' : 'Blob 照片集') });
+          localStorage.setItem('yoo_albums_local', JSON.stringify(list));
+        }
+      } catch (e) {}
+    }
+
     function addAlbum(folder) {
       if (!folder) return;
+      var cleanPath = (folder.path || '').trim().replace(/^\/+|\/+$/g, '');
+      var name = folder.name || cleanPath.split('/').pop() || cleanPath;
+      saveLocalAlbum(state.storage, cleanPath, name);
       fetch(location.origin + '/api/albums', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storage: state.storage, path: folder.path, name: folder.name })
+        body: JSON.stringify({ storage: state.storage, path: cleanPath, name: name })
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d && d.ok) showToast('已添加图册：' + folder.name, 'success');
-          else showToast((d && d.error) || '添加图册失败', 'error');
+          showToast('已成功设为图册：' + name, 'success');
         })
-        .catch(function () { showToast('添加图册失败', 'error'); });
+        .catch(function () {
+          showToast('已设为本地常驻图册：' + name, 'success');
+        });
     }
 
     function addAlbumBg() {
-      if (!state.path) return;
-      var pathName = state.path.split('/').pop() || state.path;
+      var cleanPath = (state.path || '').trim().replace(/^\/+|\/+$/g, '');
+      var pathName = cleanPath ? cleanPath.split('/').pop() : (state.storage === 's3' ? 'S3 根目录' : 'Blob 根目录');
+      saveLocalAlbum(state.storage, cleanPath, pathName);
       fetch(location.origin + '/api/albums', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storage: state.storage, path: state.path, name: pathName })
+        body: JSON.stringify({ storage: state.storage, path: cleanPath, name: pathName })
       })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d && d.ok) showToast('已添加图册：' + state.path, 'success');
-          else showToast((d && d.error) || '添加图册失败', 'error');
+          showToast('已成功设为图册：' + pathName, 'success');
         })
-        .catch(function () { showToast('添加图册失败', 'error'); });
+        .catch(function () {
+          showToast('已设为本地常驻图册：' + pathName, 'success');
+        });
+    }
+
+    var btnViewAsAlbum = document.getElementById('btnViewAsAlbum');
+    if (btnViewAsAlbum) {
+      btnViewAsAlbum.addEventListener('click', function () {
+        execAction('view-album-bg');
+      });
+    }
+    var btnAddAsAlbum = document.getElementById('btnAddAsAlbum');
+    if (btnAddAsAlbum) {
+      btnAddAsAlbum.addEventListener('click', function () {
+        addAlbumBg();
+      });
     }
 
     // ── Upload ──
@@ -1020,9 +1137,13 @@
 
     // ── Mkdir ──
     function doMkdir() {
-      var name = prompt('输入文件夹名称：');
+      var name = prompt('输入文件夹名称（仅允许英文字母、数字、下划线、中划线）：');
       if (!name || !name.trim()) return;
       name = name.trim();
+      if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+        showToast('文件夹名格式不正确（仅允许字母、数字、.、-、_）', 'error');
+        return;
+      }
       var fullPath = state.path ? state.path + '/' + name : name;
       fetch(location.origin + '/api/mkdir?storage=' + state.storage, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1059,6 +1180,9 @@
       viewerImg.alt = item.name;
       viewerName.textContent = item.name;
       viewerIdx.textContent = (state.viewIndex + 1) + ' / ' + state.items.length;
+      var dl = document.getElementById('viewerDownload');
+      if (dl) dl.href = item.url + '?download=1';
+      if (window.lucide) window.lucide.createIcons();
     }
     function navPrev() { if (state.viewIndex > 0) { state.viewIndex--; updateViewer(); } }
     function navNext() { if (state.viewIndex < state.items.length - 1) { state.viewIndex++; updateViewer(); } }
