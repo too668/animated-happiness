@@ -761,9 +761,20 @@ export async function onRequest(context) {
           const r = await fetchT(sbase + '/rest/v1/albums?limit=0', {
             headers: { 'apikey': skey, 'Authorization': 'Bearer ' + skey }
           });
-          keysProbe = { ok: r.ok, backend: 'supabase' };
+          const text = await r.text();
+          let projectHost = '';
+          try {
+            projectHost = new URL(sbase).hostname;
+          } catch {}
+          keysProbe = {
+            ok: r.ok,
+            backend: 'supabase',
+            project: projectHost,
+            status: r.status,
+            detail: r.ok ? 'connected' : text.slice(0, 160)
+          };
         } else {
-          keysProbe = { ok: false, backend: 'supabase', error: '未配置' };
+          keysProbe = { ok: false, backend: 'supabase', error: '未配置 SUPABASE_URL 或 SUPABASE_SECRET_KEY' };
         }
       } catch (e) {
         keysProbe = { ok: false, backend: 'supabase', error: e.message };
@@ -772,7 +783,11 @@ export async function onRequest(context) {
         configured: isS3Configured(context),
         endpoint: IDRIVE_ENDPOINT,
         region: IDRIVE_REGION,
-        bucket: isS3Configured(context) ? envVar(context, 'IDRIVE_BUCKET') : ''
+        bucket: isS3Configured(context) ? envVar(context, 'IDRIVE_BUCKET') : '',
+        accessKeyIdMasked: isS3Configured(context) ? (function (k) {
+          if (!k) return '';
+          return k.length > 8 ? (k.slice(0, 4) + '****' + k.slice(-4)) : '****';
+        })(envVar(context, 'IDRIVE_ACCESS_KEY_ID')) : ''
       };
       if (isS3Configured(context)) {
         try {
@@ -786,10 +801,35 @@ export async function onRequest(context) {
           s3Probe.error = e.message;
         }
       }
+
+      // 如果带 ?test=blob，进行端到端写入、读取、删除真实闭环测试
+      let blobTest = null;
+      if (url.searchParams.get('test') === 'blob') {
+        const testKey = `__selftest_${Date.now()}.txt`;
+        const testVal = `yoo_ok_${Date.now()}`;
+        try {
+          const bytes = new TextEncoder().encode(testVal);
+          await control.set(testKey, bytes.buffer);
+          const readVal = await control.get(testKey, { type: 'text' });
+          await control.delete(testKey);
+          blobTest = {
+            ok: readVal === testVal,
+            testKey,
+            write: true,
+            readMatch: readVal === testVal,
+            delete: true
+          };
+        } catch (err) {
+          blobTest = { ok: false, error: err.message };
+        }
+      }
+
       return json({
         ok: true,
         store: STORE_NAME,
+        adminConfigured: Boolean(envPassword(context)),
         storage: probe,
+        blobTest: blobTest || undefined,
         keys: keysProbe,
         s3: s3Probe,
         limits: {
