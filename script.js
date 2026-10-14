@@ -630,15 +630,19 @@ function fmtDate(ts) {
 
 function loadKeys() {
   return asyncJson(getApiBase() + '/api/keys').then(function (res) {
-    renderKeys(res.keys || []);
+    renderKeys(res.keys || [], res.warning);
   }).catch(function (e) {
     showToast('读取 API key 列表失败：' + e.message, 'error');
   });
 }
 
-function renderKeys(keys) {
+function renderKeys(keys, warning) {
   var root = document.getElementById('keyList');
   if (!root) return;
+  if (warning) {
+    root.innerHTML = '<p class="muted" style="font-size:0.82rem;margin:0;color:var(--warn,#e6a23c);">' + esc(warning) + '</p>';
+    return;
+  }
   if (!keys || !keys.length) {
     root.innerHTML = '<p class="muted" style="font-size:0.82rem;margin:0;">还没有 API key，用上面的表单创建一个。</p>';
     return;

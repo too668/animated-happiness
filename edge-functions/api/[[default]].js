@@ -207,7 +207,11 @@ async function resolveAuth(context, request, url) {
     const res = await fetchT(base + '/rest/v1/api_keys?secret_hash=eq.' + encodeURIComponent(hash) + '&select=*', {
       headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
     });
-    const rows = await res.json();
+    const text = await res.text();
+    let rows = [];
+    if (res.ok) {
+      try { rows = JSON.parse(text); } catch {}
+    }
     if (Array.isArray(rows) && rows.length > 0) {
       record = rows[0];
       record.perms = typeof record.perms === 'string' ? JSON.parse(record.perms) : record.perms;
@@ -236,7 +240,11 @@ async function findKeyRecord(context, id) {
     const res = await fetchT(base + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id) + '&select=*', {
       headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
     });
-    const rows = await res.json();
+    const text = await res.text();
+    let rows = [];
+    if (res.ok) {
+      try { rows = JSON.parse(text); } catch {}
+    }
     if (Array.isArray(rows) && rows.length > 0) {
       const rec = rows[0];
       rec.perms = typeof rec.perms === 'string' ? JSON.parse(rec.perms) : rec.perms;
@@ -465,6 +473,9 @@ async function s3ListObjects(context, limit, prefix, delimiter, continuationToke
 
   if (!res.ok) {
     const text = await res.text();
+    if (text.includes('InvalidAccessKeyId')) {
+      throw new Error('S3 访问密钥无效（iDrive 提示 AccessKey 不存在或已过期，请在 EdgeOne 控制台更新 S3 密钥）');
+    }
     throw new Error(`S3 list failed ${res.status}: ${text.slice(0, 200)}`);
   }
 
@@ -806,7 +817,19 @@ export async function onRequest(context) {
           const res = await fetchT(sbase + '/rest/v1/api_keys?order=created_at.desc&select=*', {
             headers: { 'apikey': skey, 'Authorization': 'Bearer ' + skey }
           });
-          const rows = await res.json();
+          const text = await res.text();
+          let rows = [];
+          if (res.ok) {
+            try { rows = JSON.parse(text); } catch { rows = []; }
+          } else {
+            return json({
+              ok: true,
+              keys: [],
+              warning: (text.includes('<!doctype') || text.includes('<html'))
+                ? 'Supabase 数据库处于休眠或未响应状态，暂时无法加载 API 密钥'
+                : `数据库查询异常 (HTTP ${res.status})`
+            }, 200, { 'Cache-Control': 'no-store' });
+          }
           const keys = (Array.isArray(rows) ? rows : []).map(function (r) {
             var perms = r.perms;
             if (typeof perms === 'string') try { perms = JSON.parse(perms); } catch { perms = []; }
@@ -820,7 +843,11 @@ export async function onRequest(context) {
           });
           return json({ ok: true, keys }, 200, { 'Cache-Control': 'no-store' });
         } catch (e) {
-          return fail('查询密钥失败：' + e.message, 500);
+          return json({
+            ok: true,
+            keys: [],
+            warning: '查询密钥服务不可用：' + e.message
+          }, 200, { 'Cache-Control': 'no-store' });
         }
       }
 
@@ -841,7 +868,15 @@ export async function onRequest(context) {
             body: JSON.stringify({ id, secret_hash: secretHash, name, perms })
           });
           if (res.status === 409) return fail('密钥冲突，请重试', 409);
-          const data = await res.json();
+          const text = await res.text();
+          if (!res.ok) {
+            if (text.includes('<!doctype') || text.includes('<html')) {
+              return fail('数据库处于休眠状态或连接失败，请检查 Supabase 实例', 503);
+            }
+            return fail('创建密钥失败：' + text.slice(0, 120), res.status);
+          }
+          let data;
+          try { data = JSON.parse(text); } catch { data = {}; }
           return json({ ok: true, id, name, perms, secret, createdAt: (data[0] || data).created_at }, 200, { 'Cache-Control': 'no-store' });
         } catch (e) {
           return fail('创建密钥失败：' + e.message, 500);
@@ -870,7 +905,15 @@ export async function onRequest(context) {
             headers: sHeaders,
             body: JSON.stringify(update)
           });
-          const data = await res.json();
+          const text = await res.text();
+          if (!res.ok) {
+            if (text.includes('<!doctype') || text.includes('<html')) {
+              return fail('数据库处于休眠状态或连接失败，请检查 Supabase 实例', 503);
+            }
+            return fail('更新密钥失败：' + text.slice(0, 120), res.status);
+          }
+          let data;
+          try { data = JSON.parse(text); } catch { data = {}; }
           const rec = Array.isArray(data) && data[0];
           return json({ ok: true, id, name: rec ? rec.name : update.name, perms: rec ? rec.perms : update.perms });
         } catch (e) {
@@ -883,10 +926,16 @@ export async function onRequest(context) {
         const id = url.searchParams.get('id') || '';
         if (!id) return fail('缺少参数 id');
         try {
-          await fetchT(sbase + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id), {
+          const res = await fetchT(sbase + '/rest/v1/api_keys?id=eq.' + encodeURIComponent(id), {
             method: 'DELETE',
             headers: sHeaders
           });
+          if (!res.ok) {
+            const text = await res.text();
+            if (text.includes('<!doctype') || text.includes('<html')) {
+              return fail('数据库处于休眠状态，请稍后重试', 503);
+            }
+          }
           return json({ ok: true, id, message: '已吊销' });
         } catch (e) {
           return fail('删除密钥失败：' + e.message, 500);
@@ -1466,7 +1515,11 @@ export async function onRequest(context) {
         const res = await fetchT(base + '/rest/v1/folders?' + filter, {
           headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
         });
-        const rows = await res.json();
+        const text = await res.text();
+        let rows = [];
+        if (res.ok) {
+          try { rows = JSON.parse(text); } catch {}
+        }
         return Array.isArray(rows) ? rows.map(r => ({
           name: r.path.split('/').pop(),
           path: r.path
@@ -1487,14 +1540,22 @@ export async function onRequest(context) {
           parent_path: segments.slice(0, i - 1).join('/')
         });
       }
-      const res = await fetchT(base + '/rest/v1/folders?on_conflict=storage,path', {
-        method: 'POST',
-        headers: { ...supabaseHeaders(context), 'Prefer': 'resolution=merge-duplicates' },
-        body: JSON.stringify(rows)
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error('DB upsert failed: ' + text.slice(0, 200));
+      try {
+        const res = await fetchT(base + '/rest/v1/folders?on_conflict=storage,path', {
+          method: 'POST',
+          headers: { ...supabaseHeaders(context), 'Prefer': 'resolution=merge-duplicates' },
+          body: JSON.stringify(rows)
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          if (text.includes('<!doctype') || text.includes('<html')) {
+            console.warn('Supabase folders upsert HTML response (service dormant)');
+            return;
+          }
+          throw new Error('DB upsert failed: ' + text.slice(0, 200));
+        }
+      } catch (err) {
+        console.warn('dbUpsertFolders exception ignored:', err.message);
       }
     }
 
@@ -1510,7 +1571,11 @@ export async function onRequest(context) {
           method: 'DELETE',
           headers: supabaseHeaders(context)
         });
-        const deleted = await res.json();
+        const text = await res.text();
+        let deleted = [];
+        if (res.ok) {
+          try { deleted = JSON.parse(text); } catch {}
+        }
         return Array.isArray(deleted) ? deleted.length : 0;
       } catch { return 0; }
     }
@@ -1526,7 +1591,11 @@ export async function onRequest(context) {
           method: 'DELETE',
           headers: supabaseHeaders(context)
         });
-        const deleted = await res.json();
+        const text = await res.text();
+        let deleted = [];
+        if (res.ok) {
+          try { deleted = JSON.parse(text); } catch {}
+        }
         return Array.isArray(deleted) ? deleted.length : 0;
       } catch { return 0; }
     }
@@ -1536,15 +1605,19 @@ export async function onRequest(context) {
       if (gate) return gate;
       const base = supabaseUrl(context);
       const key = supabaseKey(context);
-      if (!base || !key) return fail('相册服务未配置', 503);
+      if (!base || !key) return json({ ok: true, albums: [] });
       try {
         const res = await fetchT(base + '/rest/v1/albums?order=created_at.asc', {
           headers: { 'apikey': key, 'Authorization': 'Bearer ' + key }
         });
-        const data = await res.json();
-        return json({ ok: true, albums: data });
+        const text = await res.text();
+        let data = [];
+        if (res.ok) {
+          try { data = JSON.parse(text); } catch { data = []; }
+        }
+        return json({ ok: true, albums: Array.isArray(data) ? data : [] });
       } catch (e) {
-        return fail('获取相册失败：' + e.message, 500);
+        return json({ ok: true, albums: [], warning: '相册暂不可用：' + e.message });
       }
     }
 
@@ -1570,8 +1643,16 @@ export async function onRequest(context) {
           body: JSON.stringify({ storage, path, name })
         });
         if (res.status === 409) return fail('该相册已存在', 409);
-        const data = await res.json();
-        return json({ ok: true, album: data[0] || data });
+        const text = await res.text();
+        if (!res.ok) {
+          if (text.includes('<!doctype') || text.includes('<html')) {
+            return fail('相册数据库处于休眠状态，请检查 Supabase 实例', 503);
+          }
+          return fail('添加相册失败：' + text.slice(0, 100), res.status);
+        }
+        let data;
+        try { data = JSON.parse(text); } catch { data = {}; }
+        return json({ ok: true, album: (Array.isArray(data) ? data[0] : data) || { storage, path, name } });
       } catch (e) {
         return fail('添加相册失败：' + e.message, 500);
       }
@@ -1586,10 +1667,16 @@ export async function onRequest(context) {
       const id = url.searchParams.get('id');
       if (!id) return fail('缺少 id');
       try {
-        await fetchT(base + '/rest/v1/albums?id=eq.' + encodeURIComponent(id), {
+        const res = await fetchT(base + '/rest/v1/albums?id=eq.' + encodeURIComponent(id), {
           method: 'DELETE',
           headers: supabaseHeaders(context)
         });
+        if (!res.ok) {
+          const text = await res.text();
+          if (text.includes('<!doctype') || text.includes('<html')) {
+            return fail('相册数据库处于休眠状态，请稍后重试', 503);
+          }
+        }
         return json({ ok: true });
       } catch (e) {
         return fail('删除相册失败：' + e.message, 500);

@@ -200,9 +200,9 @@
             .then(function (d) {
               if (d && d.ok) {
                 document.getElementById('s3Count').textContent = typeof d.total === 'number' ? d.total : (d.items || []).length;
-              } else if (d && d.error && /未配置/.test(d.error)) {
+              } else if (d && d.error) {
                 var el = document.getElementById('s3Count');
-                el.textContent = '未配置';
+                el.textContent = /未配置/.test(d.error) ? '未配置' : '需更新密钥';
                 el.style.fontSize = '0.9rem';
                 el.style.color = 'var(--muted)';
               }

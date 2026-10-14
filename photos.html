@@ -590,7 +590,7 @@
       var p = new URLSearchParams(location.search);
       var albumIdx = p.get('album');
       var folder = p.get('folder') || p.get('path');
-      var storage = p.get('storage') || 's3';
+      var storage = p.get('storage') || 'blob';
       var name = p.get('name') || '';
 
       if (folder !== null) {
