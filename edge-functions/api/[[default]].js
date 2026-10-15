@@ -814,7 +814,11 @@ export async function onRequest(context) {
         accessKeyIdMasked: isS3Configured(context) ? (function (k) {
           if (!k) return '';
           return k.length > 8 ? (k.slice(0, 4) + '****' + k.slice(-4)) : '****';
-        })(s3AccessKeyId(context)) : ''
+        })(s3AccessKeyId(context)) : '',
+        envDebug: {
+          s3_access_key_id: envVar(context, 'S3_ACCESS_KEY_ID') ? (envVar(context, 'S3_ACCESS_KEY_ID').slice(0, 6) + '...') : '(empty)',
+          raw_keys: Object.keys((context && context.env) || globalThis.env || {})
+        }
       };
       if (isS3Configured(context)) {
         try {
