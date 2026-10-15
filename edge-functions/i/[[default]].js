@@ -2,8 +2,8 @@ import { getStore } from '@edgeone/pages-blob';
 
 const STORE_NAME = 'yoo-images';
 
-const IDRIVE_ENDPOINT = 'https://s3.ap-northeast-1.idrivee2.com';
-const IDRIVE_REGION = 'ap-northeast-1';
+const DEFAULT_S3_ENDPOINT = 'https://s3.us-east-005.backblazeb2.com';
+const DEFAULT_S3_REGION = 'us-east-005';
 
 const IMAGE_TYPES = {
   '.png': 'image/png',
@@ -84,16 +84,25 @@ async function s3SigningKey(secret, date, region) {
   return s3Hmac(kService, 'aws4_request');
 }
 
+function s3Endpoint(context) { return envVar(context, 'S3_ENDPOINT') || DEFAULT_S3_ENDPOINT; }
+function s3Region(context) { return envVar(context, 'S3_REGION') || DEFAULT_S3_REGION; }
+function s3Bucket(context) { return envVar(context, 'S3_BUCKET'); }
+function s3AccessKeyId(context) { return envVar(context, 'S3_ACCESS_KEY_ID'); }
+function s3SecretAccessKey(context) { return envVar(context, 'S3_SECRET_ACCESS_KEY'); }
+
 async function s3SignedGet(context, key) {
-  const bucket = envVar(context, 'IDRIVE_BUCKET');
-  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
-  const host = `${bucket}.${new URL(IDRIVE_ENDPOINT).host}`;
+  const bucket = s3Bucket(context);
+  const accessKey = s3AccessKeyId(context);
+  const secret = s3SecretAccessKey(context);
+  const region = s3Region(context);
+  const ep = s3Endpoint(context);
+  const endpointHost = new URL(ep.startsWith('http') ? ep : `https://${ep}`).host;
+  const host = `${bucket}.${endpointHost}`;
   const pathname = awsPathEncode('/' + key);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
-  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+  const scope = `${date}/${region}/s3/aws4_request`;
 
   const url = `https://${host}${pathname}`;
   const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
@@ -110,7 +119,7 @@ async function s3SignedGet(context, key) {
 
   const canonical = ['GET', pathname, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
   const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
-  const sk = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const sk = await s3SigningKey(secret, date, region);
   const sig = s3Hex(await s3Hmac(sk, toSign));
 
   return fetchT(url, {
