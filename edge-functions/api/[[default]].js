@@ -497,7 +497,7 @@ async function s3ListObjects(context, limit, prefix, delimiter, continuationToke
   if (!res.ok) {
     const text = await res.text();
     if (text.includes('InvalidAccessKeyId')) {
-      throw new Error('S3 访问密钥无效（AccessKey 不存在或已过期，请在 EdgeOne 控制台更新 S3 密钥）');
+      throw new Error(`S3 访问密钥无效 (${res.status} InvalidAccessKeyId: ${text.slice(0, 120)})`);
     }
     throw new Error(`S3 list failed ${res.status}: ${text.slice(0, 200)}`);
   }
