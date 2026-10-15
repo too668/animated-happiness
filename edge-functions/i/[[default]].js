@@ -169,7 +169,7 @@ export async function onRequest(context) {
 
   // ── S3 出图 ──
   if (isS3) {
-    if (!envVar(context, 'IDRIVE_BUCKET')) return notFound();
+    if (!s3Bucket(context) || !s3AccessKeyId(context) || !s3SecretAccessKey(context)) return notFound();
     try {
       const s3Resp = await s3SignedGet(context, key);
       if (!s3Resp.ok) return notFound();
