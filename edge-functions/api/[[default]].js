@@ -11,9 +11,9 @@ const RELAY_MAX_BYTES = 950 * 1024; // Edge 请求体上限 1MB，留出余量
 const DIRECT_MAX_BYTES = 20 * 1024 * 1024; // Blob 单值上限 25MB
 const S3_MAX_BYTES = 5 * 1024 * 1024 * 1024; // S3 上限 5GB
 
-// iDrive e2 S3 配置（HTTP/SigV4）
-const IDRIVE_ENDPOINT = 'https://s3.ap-northeast-1.idrivee2.com';
-const IDRIVE_REGION = 'ap-northeast-1';
+// S3 兼容对象存储配置（支持 Backblaze B2 / Cloudflare R2 / AWS S3 / iDrive e2 等）
+const DEFAULT_S3_ENDPOINT = 'https://s3.us-east-005.backblazeb2.com';
+const DEFAULT_S3_REGION = 'us-east-005';
 
 function envVar(context, name) {
   const envVars = (context && context.env) || globalThis.env || {};
@@ -21,8 +21,28 @@ function envVar(context, name) {
   return typeof v === 'string' && v.trim() ? v.trim() : '';
 }
 
+function s3Endpoint(context) {
+  return envVar(context, 'S3_ENDPOINT') || envVar(context, 'IDRIVE_ENDPOINT') || DEFAULT_S3_ENDPOINT;
+}
+
+function s3Region(context) {
+  return envVar(context, 'S3_REGION') || envVar(context, 'IDRIVE_REGION') || DEFAULT_S3_REGION;
+}
+
+function s3Bucket(context) {
+  return envVar(context, 'S3_BUCKET') || envVar(context, 'IDRIVE_BUCKET');
+}
+
+function s3AccessKeyId(context) {
+  return envVar(context, 'S3_ACCESS_KEY_ID') || envVar(context, 'IDRIVE_ACCESS_KEY_ID');
+}
+
+function s3SecretAccessKey(context) {
+  return envVar(context, 'S3_SECRET_ACCESS_KEY') || envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+}
+
 function isS3Configured(context) {
-  return !!(envVar(context, 'IDRIVE_BUCKET') && envVar(context, 'IDRIVE_ACCESS_KEY_ID') && envVar(context, 'IDRIVE_SECRET_ACCESS_KEY'));
+  return !!(s3Bucket(context) && s3AccessKeyId(context) && s3SecretAccessKey(context));
 }
 const UPLOAD_URL_TTL = 600;
 const LIST_DEFAULT_LIMIT = 100;
@@ -381,19 +401,21 @@ async function s3SigningKey(secret, date, region) {
 }
 
 function s3Host(context) {
-  const endpointHost = new URL(IDRIVE_ENDPOINT).host;
-  return `${envVar(context, 'IDRIVE_BUCKET')}.${endpointHost}`;
+  const ep = s3Endpoint(context);
+  const endpointHost = new URL(ep.startsWith('http') ? ep : `https://${ep}`).host;
+  return `${s3Bucket(context)}.${endpointHost}`;
 }
 
 async function s3PresignPut(context, pathname, contentType, expireSeconds) {
-  const bucket = envVar(context, 'IDRIVE_BUCKET');
-  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const bucket = s3Bucket(context);
+  const accessKey = s3AccessKeyId(context);
+  const secret = s3SecretAccessKey(context);
+  const region = s3Region(context);
   const host = s3Host(context);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
-  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+  const scope = `${date}/${region}/s3/aws4_request`;
   const credential = `${accessKey}/${scope}`;
 
   const params = [
@@ -417,20 +439,21 @@ async function s3PresignPut(context, pathname, contentType, expireSeconds) {
   ].join('\n');
 
   const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
-  const key = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const key = await s3SigningKey(secret, date, region);
   const sig = s3Hex(await s3Hmac(key, toSign));
 
   return `https://${host}${canonicalPath}?${qs}&X-Amz-Signature=${sig}`;
 }
 
 async function s3ListObjects(context, limit, prefix, delimiter, continuationToken) {
-  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const accessKey = s3AccessKeyId(context);
+  const secret = s3SecretAccessKey(context);
+  const region = s3Region(context);
   const host = s3Host(context);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
-  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+  const scope = `${date}/${region}/s3/aws4_request`;
 
   const params = [
     ['list-type', '2'],
@@ -461,7 +484,7 @@ async function s3ListObjects(context, limit, prefix, delimiter, continuationToke
   ].join('\n');
 
   const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
-  const key = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const key = await s3SigningKey(secret, date, region);
   const sig = s3Hex(await s3Hmac(key, toSign));
 
   const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
@@ -474,7 +497,7 @@ async function s3ListObjects(context, limit, prefix, delimiter, continuationToke
   if (!res.ok) {
     const text = await res.text();
     if (text.includes('InvalidAccessKeyId')) {
-      throw new Error('S3 访问密钥无效（iDrive 提示 AccessKey 不存在或已过期，请在 EdgeOne 控制台更新 S3 密钥）');
+      throw new Error('S3 访问密钥无效（AccessKey 不存在或已过期，请在 EdgeOne 控制台更新 S3 密钥）');
     }
     throw new Error(`S3 list failed ${res.status}: ${text.slice(0, 200)}`);
   }
@@ -529,15 +552,16 @@ async function s3ListAll(context, prefix, delimiter, cap = 10000) {
 }
 
 async function s3DeleteObject(context, key) {
-  const bucket = envVar(context, 'IDRIVE_BUCKET');
-  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const bucket = s3Bucket(context);
+  const accessKey = s3AccessKeyId(context);
+  const secret = s3SecretAccessKey(context);
+  const region = s3Region(context);
   const host = s3Host(context);
   const pathname = awsPathEncode('/' + key);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
-  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+  const scope = `${date}/${region}/s3/aws4_request`;
 
   const url = `https://${host}${pathname}`;
   const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
@@ -558,7 +582,7 @@ async function s3DeleteObject(context, key) {
   ].join('\n');
 
   const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
-  const key2 = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const key2 = await s3SigningKey(secret, date, region);
   const sig = s3Hex(await s3Hmac(key2, toSign));
 
   const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
@@ -579,9 +603,10 @@ async function s3DeleteObjects(context, keys) {
   if (!keys || !keys.length) return 0;
   const CHUNK_SIZE = 1000;
   let deletedCount = 0;
-  const bucket = envVar(context, 'IDRIVE_BUCKET');
-  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const bucket = s3Bucket(context);
+  const accessKey = s3AccessKeyId(context);
+  const secret = s3SecretAccessKey(context);
+  const region = s3Region(context);
   const host = s3Host(context);
 
   for (let i = 0; i < keys.length; i += CHUNK_SIZE) {
@@ -594,7 +619,7 @@ async function s3DeleteObjects(context, keys) {
     const d = new Date();
     const date = s3Ymd(d);
     const datetime = s3Ymdhms(d);
-    const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+    const scope = `${date}/${region}/s3/aws4_request`;
 
     const qs = 'delete=';
     const headers = {
@@ -613,7 +638,7 @@ async function s3DeleteObjects(context, keys) {
     ].join('\n');
 
     const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
-    const signingKey = await s3SigningKey(secret, date, IDRIVE_REGION);
+    const signingKey = await s3SigningKey(secret, date, region);
     const sig = s3Hex(await s3Hmac(signingKey, toSign));
     const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
 
@@ -637,16 +662,17 @@ async function s3DeleteObjects(context, keys) {
 }
 
 async function s3CopyObject(context, srcKey, dstKey) {
-  const accessKey = envVar(context, 'IDRIVE_ACCESS_KEY_ID');
-  const secret = envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  const accessKey = s3AccessKeyId(context);
+  const secret = s3SecretAccessKey(context);
+  const region = s3Region(context);
   const host = s3Host(context);
-  const bucket = envVar(context, 'IDRIVE_BUCKET');
+  const bucket = s3Bucket(context);
   const pathname = awsPathEncode('/' + dstKey);
   const copySource = awsPathEncode(`/${bucket}/${srcKey}`);
   const d = new Date();
   const date = s3Ymd(d);
   const datetime = s3Ymdhms(d);
-  const scope = `${date}/${IDRIVE_REGION}/s3/aws4_request`;
+  const scope = `${date}/${region}/s3/aws4_request`;
 
   const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
@@ -667,7 +693,7 @@ async function s3CopyObject(context, srcKey, dstKey) {
   ].join('\n');
 
   const toSign = ['AWS4-HMAC-SHA256', datetime, scope, s3Hex(await s3Hash(canonical))].join('\n');
-  const signingKey = await s3SigningKey(secret, date, IDRIVE_REGION);
+  const signingKey = await s3SigningKey(secret, date, region);
   const sig = s3Hex(await s3Hmac(signingKey, toSign));
 
   const auth = `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
@@ -781,13 +807,13 @@ export async function onRequest(context) {
       }
       let s3Probe = {
         configured: isS3Configured(context),
-        endpoint: IDRIVE_ENDPOINT,
-        region: IDRIVE_REGION,
-        bucket: isS3Configured(context) ? envVar(context, 'IDRIVE_BUCKET') : '',
+        endpoint: s3Endpoint(context),
+        region: s3Region(context),
+        bucket: isS3Configured(context) ? s3Bucket(context) : '',
         accessKeyIdMasked: isS3Configured(context) ? (function (k) {
           if (!k) return '';
           return k.length > 8 ? (k.slice(0, 4) + '****' + k.slice(-4)) : '****';
-        })(envVar(context, 'IDRIVE_ACCESS_KEY_ID')) : ''
+        })(s3AccessKeyId(context)) : ''
       };
       if (isS3Configured(context)) {
         try {

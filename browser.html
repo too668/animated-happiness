@@ -465,7 +465,7 @@
     function renderBreadcrumb() {
       var tag = document.getElementById('storageTag');
       tag.className = 'storage-tag ' + state.storage;
-      tag.textContent = state.storage === 's3' ? 'iDrive S3' : 'Blob';
+      tag.textContent = state.storage === 's3' ? 'B2 S3' : 'Blob';
 
       var html = '<a href="./gallery.html">' + esc(storageLabel()) + '</a>';
       if (state.path) {
