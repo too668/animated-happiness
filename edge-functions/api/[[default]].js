@@ -813,7 +813,13 @@ export async function onRequest(context) {
         accessKeyIdMasked: isS3Configured(context) ? (function (k) {
           if (!k) return '';
           return k.length > 8 ? (k.slice(0, 4) + '****' + k.slice(-4)) : '****';
-        })(s3AccessKeyId(context)) : ''
+        })(s3AccessKeyId(context)) : '',
+        envKeysFound: [
+          'S3_BUCKET', 'IDRIVE_BUCKET',
+          'S3_ACCESS_KEY_ID', 'IDRIVE_ACCESS_KEY_ID',
+          'S3_REGION', 'IDRIVE_REGION',
+          'S3_ENDPOINT', 'IDRIVE_ENDPOINT'
+        ].filter(k => Boolean(envVar(context, k)))
       };
       if (isS3Configured(context)) {
         try {
