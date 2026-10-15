@@ -180,28 +180,104 @@ function compressToLimit(file, limit) {
   });
 }
 
+// ── 进度条 UI 辅助 ──
+function renderProgressCard(name, pct, loaded, total, speed) {
+  var box = document.getElementById('uploadProgressContainer');
+  if (!box) return;
+  box.style.display = 'block';
+  var metaText = humanSize(loaded) + ' / ' + humanSize(total);
+  if (speed) metaText += ' · ' + speed;
+  box.innerHTML =
+    '<div class="upload-progress-card">' +
+      '<div class="upload-progress-header">' +
+        '<span class="upload-progress-name" title="' + esc(name) + '">' + esc(name) + '</span>' +
+        '<span class="upload-progress-pct">' + pct + '%</span>' +
+      '</div>' +
+      '<div class="upload-progress-bar-bg">' +
+        '<div class="upload-progress-bar-fill" style="width:' + pct + '%;"></div>' +
+      '</div>' +
+      '<div class="upload-progress-meta">' +
+        '<span>' + metaText + '</span>' +
+        '<span>正在传输到云端...</span>' +
+      '</div>' +
+    '</div>';
+}
+
+function clearProgressCard() {
+  var box = document.getElementById('uploadProgressContainer');
+  if (box) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+  }
+}
+
 // ── 上传 ──
-function uploadDirect(file) {
+function uploadDirect(file, onProgress) {
   var base = getApiBase();
   var contentType = file.type || 'application/octet-stream';
   var storage = currentStorage();
-  
+
   return asyncJson(base + '/api/upload-url?storage=' + encodeURIComponent(storage), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: file.name, size: file.size, contentType: contentType })
   }).then(function (signed) {
-    // Content-Type 被签进了地址，必须原样回传。注意：被拒的写不会给可读的 403，
-    // 存储网关直接掐断连接，fetch 是以 TypeError('Failed to fetch') 拒绝的。
-    return fetch(signed.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': signed.contentType || contentType } })
-      .then(function (r) {
-        if (!r.ok) return r.text().then(function (t) { throw new Error('直传写入失败 HTTP ' + r.status + (t ? ' · ' + t.slice(0, 80) : '')); });
-        return { key: signed.key, url: signed.url, name: file.name, size: file.size, mode: '直传', storage: signed.storage || storage };
-      })
-      .catch(function (e) {
-        if (e instanceof TypeError) throw new Error('直传连接被中断，文件未上传成功。请重试，或改用「压缩中转」模式');
-        throw e;
-      });
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      var startTime = Date.now();
+      var lastLoaded = 0;
+      var lastTime = startTime;
+
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) {
+          var now = Date.now();
+          var pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+          var speedStr = '';
+          var timeDiff = (now - lastTime) / 1000;
+          if (timeDiff >= 0.5) {
+            var speedBytes = (e.loaded - lastLoaded) / timeDiff;
+            speedStr = humanSize(speedBytes) + '/s';
+            lastLoaded = e.loaded;
+            lastTime = now;
+          }
+          if (typeof onProgress === 'function') {
+            onProgress(pct, e.loaded, e.total, speedStr);
+          }
+        }
+      };
+
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          if (typeof onProgress === 'function') {
+            onProgress(100, file.size, file.size, '完成');
+          }
+          resolve({
+            key: signed.key,
+            url: signed.url,
+            name: file.name,
+            size: file.size,
+            mode: '直传',
+            storage: signed.storage || storage
+          });
+        } else {
+          var errText = xhr.responseText ? xhr.responseText.slice(0, 100) : '';
+          reject(new Error('直传写入失败 HTTP ' + xhr.status + (errText ? ' · ' + errText : '')));
+        }
+      };
+
+      xhr.onerror = function () {
+        reject(new Error('直传网络异常或 CORS 被拒绝，请检查网络连接'));
+      };
+
+      xhr.onabort = function () {
+        reject(new Error('上传已取消'));
+      };
+
+      xhr.open('PUT', signed.uploadUrl, true);
+      // S3 签名是 host-only，允许设置准确的 Content-Type
+      xhr.setRequestHeader('Content-Type', signed.contentType || contentType);
+      xhr.send(file);
+    });
   });
 }
 
@@ -238,15 +314,21 @@ function uploadFiles(files) {
   var ok = 0, failed = [];
   var chain = Promise.resolve();
 
-  function runUpload(file) {
-    // 私有网盘原则：100% 磁盘镜像级原件直传，绝无压缩、绝无质量损失
-    return uploadDirect(file);
+  function runUpload(file, fileIndex) {
+    return uploadDirect(file, function (pct, loaded, total, speed) {
+      var title = (files.length > 1 ? '(' + (fileIndex + 1) + '/' + files.length + ') ' : '') + file.name;
+      renderProgressCard(title, pct, loaded, total, speed);
+      if (zoneText) {
+        zoneText.textContent = '上传中 ' + pct + '% · ' + file.name;
+      }
+    });
   }
 
   Array.prototype.forEach.call(files, function (file, i) {
     chain = chain.then(function () {
       if (zoneText) zoneText.textContent = '上传中 ' + (i + 1) + '/' + files.length + '：' + file.name;
-      return runUpload(file).then(function (item) {
+      renderProgressCard(file.name, 0, 0, file.size, '');
+      return runUpload(file, i).then(function (item) {
         list.unshift({ key: item.key, url: item.url, name: item.name, size: item.size, uploadedAt: Date.now() });
         ok++;
       }).catch(function (e) {
@@ -256,6 +338,7 @@ function uploadFiles(files) {
   });
 
   return chain.then(function () {
+    clearProgressCard();
     saveList(list);
     renderList(list);
     if (zoneText) zoneText.textContent = original;

@@ -424,7 +424,7 @@ async function s3PresignPut(context, pathname, contentType, expireSeconds) {
     ['X-Amz-Credential', credential],
     ['X-Amz-Date', datetime],
     ['X-Amz-Expires', String(expireSeconds)],
-    ['X-Amz-SignedHeaders', 'content-type;host']
+    ['X-Amz-SignedHeaders', 'host']
   ];
 
   const qs = params.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
@@ -434,8 +434,8 @@ async function s3PresignPut(context, pathname, contentType, expireSeconds) {
   const canonicalPath = awsPathEncode(pathname);
   const canonical = [
     'PUT', canonicalPath, qs,
-    `content-type:${contentType}\nhost:${host}\n`,
-    'content-type;host',
+    `host:${host}\n`,
+    'host',
     'UNSIGNED-PAYLOAD'
   ].join('\n');
 
