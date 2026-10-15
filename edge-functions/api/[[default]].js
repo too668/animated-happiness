@@ -12,6 +12,7 @@ const DIRECT_MAX_BYTES = 20 * 1024 * 1024; // Blob 单值上限 25MB
 const S3_MAX_BYTES = 5 * 1024 * 1024 * 1024; // S3 上限 5GB
 
 // S3 兼容对象存储配置（支持 Backblaze B2 / Cloudflare R2 / AWS S3 / iDrive e2 等）
+// Backblaze B2 / S3 兼容对象存储配置
 const DEFAULT_S3_ENDPOINT = 'https://s3.us-east-005.backblazeb2.com';
 const DEFAULT_S3_REGION = 'us-east-005';
 
@@ -22,23 +23,23 @@ function envVar(context, name) {
 }
 
 function s3Endpoint(context) {
-  return envVar(context, 'S3_ENDPOINT') || envVar(context, 'IDRIVE_ENDPOINT') || DEFAULT_S3_ENDPOINT;
+  return envVar(context, 'S3_ENDPOINT') || DEFAULT_S3_ENDPOINT;
 }
 
 function s3Region(context) {
-  return envVar(context, 'S3_REGION') || envVar(context, 'IDRIVE_REGION') || DEFAULT_S3_REGION;
+  return envVar(context, 'S3_REGION') || DEFAULT_S3_REGION;
 }
 
 function s3Bucket(context) {
-  return envVar(context, 'S3_BUCKET') || envVar(context, 'IDRIVE_BUCKET');
+  return envVar(context, 'S3_BUCKET');
 }
 
 function s3AccessKeyId(context) {
-  return envVar(context, 'S3_ACCESS_KEY_ID') || envVar(context, 'IDRIVE_ACCESS_KEY_ID');
+  return envVar(context, 'S3_ACCESS_KEY_ID');
 }
 
 function s3SecretAccessKey(context) {
-  return envVar(context, 'S3_SECRET_ACCESS_KEY') || envVar(context, 'IDRIVE_SECRET_ACCESS_KEY');
+  return envVar(context, 'S3_SECRET_ACCESS_KEY');
 }
 
 function isS3Configured(context) {
@@ -497,7 +498,7 @@ async function s3ListObjects(context, limit, prefix, delimiter, continuationToke
   if (!res.ok) {
     const text = await res.text();
     if (text.includes('InvalidAccessKeyId')) {
-      throw new Error(`S3 访问密钥无效 (${res.status} InvalidAccessKeyId: ${text.slice(0, 120)})`);
+      throw new Error('S3 访问密钥无效（AccessKey 不存在或已过期，请在 EdgeOne 控制台更新 S3 密钥）');
     }
     throw new Error(`S3 list failed ${res.status}: ${text.slice(0, 200)}`);
   }
@@ -813,13 +814,7 @@ export async function onRequest(context) {
         accessKeyIdMasked: isS3Configured(context) ? (function (k) {
           if (!k) return '';
           return k.length > 8 ? (k.slice(0, 4) + '****' + k.slice(-4)) : '****';
-        })(s3AccessKeyId(context)) : '',
-        envKeysFound: [
-          'S3_BUCKET', 'IDRIVE_BUCKET',
-          'S3_ACCESS_KEY_ID', 'IDRIVE_ACCESS_KEY_ID',
-          'S3_REGION', 'IDRIVE_REGION',
-          'S3_ENDPOINT', 'IDRIVE_ENDPOINT'
-        ].filter(k => Boolean(envVar(context, k)))
+        })(s3AccessKeyId(context)) : ''
       };
       if (isS3Configured(context)) {
         try {
